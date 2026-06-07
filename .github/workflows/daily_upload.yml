@@ -1,0 +1,43 @@
+name: Daily Real Estate Shorts Upload
+
+on:
+  schedule:
+    - cron: '0 14 * * *'  # 2 PM UTC (9 AM EST) daily
+  workflow_dispatch:      # Allows manual execution from GitHub actions tab
+
+jobs:
+  upload-shorts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install System Dependencies (FFmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python Dependencies
+        working-directory: youtube-real-estate-bot
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Bot Orchestrator
+        working-directory: youtube-real-estate-bot
+        env:
+          RENTCAST_API_KEY: ${{ secrets.RENTCAST_API_KEY }}
+          YOUTUBE_CREDENTIALS_JSON: ${{ secrets.YOUTUBE_CREDENTIALS_JSON }}
+        run: python main.py
+
+      - name: Handle Failure
+        if: failure()
+        run: |
+          echo "::error::The daily YouTube Shorts upload pipeline failed. Please inspect the log outputs above."
