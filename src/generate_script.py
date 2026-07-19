@@ -220,25 +220,53 @@ def generate_apod_script(apod_data: dict, model_name: str = "gemini-2.0-flash-li
         explanation=apod_data["explanation"][:2000],  # Truncate to avoid token waste
     )
 
-    raw = _call_gemini(model_name, SYSTEM_PROMPT, user_prompt)
-    parsed = _parse_json_response(raw)
+    try:
+        raw = _call_gemini(model_name, SYSTEM_PROMPT, user_prompt)
+        parsed = _parse_json_response(raw)
 
-    narration = parsed.get("narration", "").strip()
-    wc = _word_count(narration)
-    logger.info(f"Generated script: {wc} words — '{narration[:60]}...'")
+        narration = parsed.get("narration", "").strip()
+        wc = _word_count(narration)
+        logger.info(f"Generated script: {wc} words")
 
-    if wc < 40 or wc > 80:
-        logger.warning(f"Word count {wc} is outside target range 50–72. Proceeding anyway.")
+        if wc < 40 or wc > 80:
+            logger.warning(f"Word count {wc} is outside target range 50-72. Proceeding anyway.")
 
-    return {
-        "narration": narration,
-        "hook_text": parsed.get("hook_text", apod_data["title"][:30]),
-        "title_keyword": parsed.get("title_keyword", "Space"),
-        "word_count": wc,
-        "apod_title": apod_data["title"],
-        "apod_date": apod_data.get("date", ""),
-        "content_type": "apod",
-    }
+        return {
+            "narration": narration,
+            "hook_text": parsed.get("hook_text", apod_data["title"][:30]),
+            "title_keyword": parsed.get("title_keyword", "Space"),
+            "word_count": wc,
+            "apod_title": apod_data["title"],
+            "apod_date": apod_data.get("date", ""),
+            "content_type": "apod",
+        }
+    except Exception as e:
+        logger.error(f"Gemini generation failed completely: {e}")
+        logger.warning("Falling back to local extraction from NASA data (No AI used).")
+        
+        title = apod_data.get("title", "Space Discovery")
+        explanation = apod_data.get("explanation", "Space is full of incredible mysteries.")
+        
+        # Extract first 2 sentences for a short narration
+        import configparser # just to import something safely if needed, but not required
+        sentences = [s.strip() for s in explanation.split(".") if s.strip()]
+        narration = ". ".join(sentences[:2]) + "." if sentences else explanation
+        
+        # We don't have access to the global `config` easily here without loading it, so hardcode cta
+        cta = "Follow for daily space facts."
+        narration = f"{title}. {narration} {cta}"
+        
+        wc = _word_count(narration)
+        
+        return {
+            "narration": narration,
+            "hook_text": title[:30] if len(title) > 30 else title,
+            "title_keyword": title.split()[0] if title else "Space",
+            "word_count": wc,
+            "apod_title": title,
+            "apod_date": apod_data.get("date", ""),
+            "content_type": "apod",
+        }
 
 
 def generate_neo_script(neo_data: dict, model_name: str = "gemini-2.0-flash-lite") -> dict:
