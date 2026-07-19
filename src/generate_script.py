@@ -103,7 +103,7 @@ Respond in this exact JSON format (no markdown fences):
 # ── Retry decorator ────────────────────────────────────────────────────────────
 def _make_retry():
     return retry(
-        retry_if_exception_type(Exception),
+        retry=retry_if_exception_type(Exception),   # MUST be keyword arg
         stop=stop_after_attempt(5),
         wait=wait_exponential(multiplier=1, min=3, max=45),
         before_sleep=before_sleep_log(logger, logging.WARNING),
@@ -136,6 +136,7 @@ def _call_gemini(model_name: str, system_prompt: str, user_prompt: str) -> str:
             temperature=0.7,
             max_output_tokens=512,
         ),
+        request_options={"timeout": 30},   # 30-second hard timeout
     )
     text = response.text.strip()
     logger.info(f"Gemini response received ({len(text)} chars)")

@@ -92,7 +92,7 @@ def _is_spam(comment_text: str) -> bool:
 
 
 @retry(
-    retry_if_exception_type(Exception),
+    retry=retry_if_exception_type(Exception),
     stop=stop_after_attempt(4),
     wait=wait_exponential(multiplier=1, min=3, max=30),
     before_sleep=before_sleep_log(logger, logging.WARNING),
@@ -112,6 +112,7 @@ def _generate_reply(comment_text: str, topic: str, model_name: str = "gemini-2.0
             temperature=0.6,
             max_output_tokens=80,
         ),
+        request_options={"timeout": 30},
     )
     reply = response.text.strip()
     logger.info(f"Generated reply: {reply}")
