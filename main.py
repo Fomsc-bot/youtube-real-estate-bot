@@ -63,9 +63,10 @@ def main(dry_run: bool = False, use_neo: bool = False, date: str = None) -> None
     output_dir = Path("output")
     output_dir.mkdir(exist_ok=True)
 
-    api_key_nasa = os.environ.get("NASA_API_KEY", "DEMO_KEY")
-    if api_key_nasa == "DEMO_KEY":
-        logger.warning("NASA_API_KEY not set — falling back to DEMO_KEY (rate-limited).")
+    api_key_nasa = os.environ.get("NASA_API_KEY", "").strip()
+    if not api_key_nasa:
+        api_key_nasa = "DEMO_KEY"
+        logger.warning("NASA_API_KEY not set or empty — falling back to DEMO_KEY (rate-limited).")
 
     # ── Step 1: Fetch NASA content ────────────────────────────────────────────
     banner("Step 1/6 — Fetching NASA Content")

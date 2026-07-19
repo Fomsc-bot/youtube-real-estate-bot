@@ -267,9 +267,10 @@ def main():
         print(json.dumps(_DRY_RUN_APOD, indent=2))
         return
 
-    api_key = os.environ.get("NASA_API_KEY", "DEMO_KEY")
-    if api_key == "DEMO_KEY":
-        logger.warning("NASA_API_KEY not set — using DEMO_KEY (rate limited to 30/hour).")
+    api_key = os.environ.get("NASA_API_KEY", "").strip()
+    if not api_key:
+        api_key = "DEMO_KEY"
+        logger.warning("NASA_API_KEY not set or empty — using DEMO_KEY (rate limited to 30/hour).")
 
     if args.neo:
         data = fetch_neo_week(api_key, output_dir)
