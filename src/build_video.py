@@ -146,51 +146,47 @@ def _build_filter_complex(
         logger.warning(f"Custom font not found at {font_path}, using system font: {FALLBACK_FONT}")
 
     # ── 4. Hook text overlay (first hook_duration seconds) ───────────────────
-    hook_clean = hook_text.replace("'", "\\'").replace(":", "\\:").replace(",", "\\,")
+    hook_clean = hook_text.replace("'", "\\'").replace(":", "\\:").replace(",", "\\,").upper()
     hook_duration = 2.5
     filters.append(
         f"[composited]drawtext="
         f"fontfile={font_path_escaped}:"
         f"text='{hook_clean}':"
-        f"fontsize=72:"
+        f"fontsize=110:"
         f"fontcolor=white:"
         f"bordercolor=black:"
-        f"borderw=4:"
+        f"borderw=8:"
+        f"shadowx=6:shadowy=6:shadowcolor=black@0.7:"
         f"x=(w-text_w)/2:"
-        f"y=h*0.12:"
-        f"enable='between(t,0,{hook_duration})':"
-        f"box=1:"
-        f"boxcolor=black@0.45:"
-        f"boxborderw=20[with_hook]"
+        f"y=h*0.15:"
+        f"enable='between(t,0,{hook_duration})'[with_hook]"
     )
 
     # ── 5. Word-by-word animated captions ────────────────────────────────────
     base_layer = "with_hook"
-    caption_y = int(VIDEO_HEIGHT * 0.72)
+    caption_y = int(VIDEO_HEIGHT * 0.65)
     out_label = base_layer
 
     for i, entry in enumerate(words):
-        word_clean = entry["word"].replace("'", "\\'").replace(":", "\\:").replace(",", "\\,").replace(".", "").rstrip(".,!?;")
+        word_clean = entry["word"].replace("'", "\\'").replace(":", "\\:").replace(",", "\\,").replace(".", "").rstrip(".,!?;").upper()
         start = entry["start_s"]
         end = entry["end_s"]
         label_in = out_label
         label_out = f"w{i}"
 
-        # Highlighted word (yellow + slightly larger)
+        # Highlighted word (yellow + massive size + strong stroke)
         filters.append(
             f"[{label_in}]drawtext="
             f"fontfile={font_path_escaped}:"
             f"text='{word_clean}':"
-            f"fontsize=60:"
+            f"fontsize=130:"
             f"fontcolor=yellow:"
             f"bordercolor=black:"
-            f"borderw=4:"
+            f"borderw=10:"
+            f"shadowx=8:shadowy=8:shadowcolor=black@0.8:"
             f"x=(w-text_w)/2:"
             f"y={caption_y}:"
-            f"enable='between(t,{start:.3f},{end:.3f})':"
-            f"box=1:"
-            f"boxcolor=black@0.55:"
-            f"boxborderw=14[{label_out}]"
+            f"enable='between(t,{start:.3f},{end:.3f})'[{label_out}]"
         )
         out_label = label_out
 
