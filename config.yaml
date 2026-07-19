@@ -24,8 +24,8 @@ nasa:
   asteroid_watch_day: 5   # Saturday
 
 audio:
-  # edge-tts voice — distinctive, engaging, not the default
-  voice_id: "en-US-AriaNeural"
+  # gTTS language code
+  voice_id: "en"
   # Target narration duration in seconds
   target_duration_min: 15
   target_duration_max: 28

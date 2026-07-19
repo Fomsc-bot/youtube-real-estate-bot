@@ -2,7 +2,7 @@
 
 > **A fully automated NASA/Space Shorts channel hosted entirely on GitHub Actions.**
 > Uploads a new 15–30 second space fact Short every day using real NASA imagery,
-> Gemini AI narration scripts, edge-tts voiceover, and FFmpeg video assembly.
+> Gemini AI narration scripts, gTTS voiceover, and FFmpeg video assembly.
 
 ---
 
@@ -16,7 +16,7 @@
 **Pipeline steps (in order):**
 1. `fetch_content.py` — Download APOD image + metadata from NASA
 2. `generate_script.py` — Generate 50–72 word narration via Google Gemini
-3. `generate_audio.py` — TTS voiceover via `edge-tts` (Aria Neural voice) + word timestamps
+3. `generate_audio.py` — TTS voiceover via `gTTS` + approximate word timestamps
 4. `build_video.py` — FFmpeg: 9:16 crop, animated captions, logo overlay, hook text
 5. `generate_metadata.py` — SEO title, description, hashtags, tags
 6. `upload_video.py` — YouTube Data API v3 upload with resumable chunks
@@ -195,7 +195,7 @@ If your refresh token expires:
 ├── src/
 │   ├── fetch_content.py          # Step 1: NASA APOD/NEO API
 │   ├── generate_script.py        # Step 2: Gemini script generation
-│   ├── generate_audio.py         # Step 3: edge-tts voiceover
+│   ├── generate_audio.py         # Step 3: gTTS voiceover
 │   ├── build_video.py            # Step 4: FFmpeg video assembly
 │   ├── generate_metadata.py      # Step 5: YouTube metadata
 │   ├── upload_video.py           # Step 6: YouTube Data API upload
@@ -239,7 +239,7 @@ If your refresh token expires:
 |---------|-------|------|
 | NASA APOD | 1 req/day | Free |
 | Google Gemini | ~2 calls/day | Free tier (1,500 req/day) |
-| edge-tts | 1 call/day | Free (Microsoft Edge TTS) |
+| gTTS | Unlimited | Free (Google Text-to-Speech) |
 | YouTube Data API | ~1,600 units/day | Free (10,000 unit quota) |
 | GitHub Actions | ~5–10 min/day | Free (2,000 min/month for public repos) |
 

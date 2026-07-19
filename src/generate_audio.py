@@ -1,36 +1,24 @@
 """
 generate_audio.py — Step 3 of The Universe pipeline.
 
-Converts the narration script to speech using Microsoft edge-tts.
-Outputs an MP3 audio file and a WebVTT caption file with word-level
-timestamps for animated caption sync in the video builder.
+Converts the narration script to speech using gTTS (Google Text-to-Speech).
+Outputs an MP3 audio file and an approximate WebVTT caption file 
+since gTTS does not provide word-level timestamps out of the box.
 
-Voice: en-US-AriaNeural — distinctive, warm, engaging. Not the generic default.
-
+Voice: Default gTTS (en)
 Usage:
     python src/generate_audio.py --script output/script.json
-    python src/generate_audio.py --script output/script.json --output output/ --voice en-US-GuyNeural
+    python src/generate_audio.py --script output/script.json --output output/
     python src/generate_audio.py --dry-run
 """
 
 import argparse
-import asyncio
 import json
 import logging
-import os
-import shutil
 import subprocess
-import sys
 from pathlib import Path
 
-import edge_tts
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-    before_sleep_log,
-)
+from gtts import gTTS
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -41,42 +29,55 @@ logging.basicConfig(
 logger = logging.getLogger("generate_audio")
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-DEFAULT_VOICE = "en-US-AriaNeural"
-DEFAULT_RATE = "+5%"      # Slightly faster than neutral for Shorts pacing
-DEFAULT_PITCH = "+0Hz"
+DEFAULT_VOICE = "en"  # For gTTS, this is the language code
 
 
 # ── Core generation ────────────────────────────────────────────────────────────
-async def _generate_tts(
+def _format_vtt_time(seconds: float) -> str:
+    """Format seconds into VTT time string (HH:MM:SS.mmm)."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds - int(seconds)) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
+
+def _generate_vtt_approx(text: str, duration: float, vtt_path: Path):
+    """Generate approximate VTT subtitle file based on word count and total duration."""
+    words = text.split()
+    if not words:
+        with open(vtt_path, "w", encoding="utf-8") as f:
+            f.write("WEBVTT\n\n")
+        return
+    
+    word_duration = duration / len(words)
+    vtt_content = ["WEBVTT", ""]
+    
+    current_time = 0.0
+    for word in words:
+        start_time = _format_vtt_time(current_time)
+        current_time += word_duration
+        end_time = _format_vtt_time(current_time)
+        vtt_content.append(f"{start_time} --> {end_time}")
+        vtt_content.append(word)
+        vtt_content.append("")
+        
+    with open(vtt_path, "w", encoding="utf-8") as vtt_file:
+        vtt_file.write("\n".join(vtt_content))
+
+def _generate_tts(
     text: str,
     mp3_path: Path,
-    vtt_path: Path,
     voice: str = DEFAULT_VOICE,
-    rate: str = DEFAULT_RATE,
-    pitch: str = DEFAULT_PITCH,
 ) -> None:
-    """Run edge-tts and produce MP3 + VTT with word-level timestamps."""
+    """Run gTTS and produce MP3."""
     mp3_path.parent.mkdir(parents=True, exist_ok=True)
 
-    communicate = edge_tts.Communicate(text, voice=voice, rate=rate, pitch=pitch)
-    submaker = edge_tts.SubMaker()
-
-    logger.info(f"Generating TTS with voice={voice}, rate={rate} ...")
-
-    with open(mp3_path, "wb") as audio_file:
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio_file.write(chunk["data"])
-            elif chunk["type"] == "WordBoundary":
-                submaker.create_sub(chunk["text"], chunk["offset"], chunk["duration"])
+    logger.info(f"Generating TTS with gTTS (lang={voice}) ...")
+    
+    tts = gTTS(text=text, lang=voice, slow=False)
+    tts.save(str(mp3_path))
 
     logger.info(f"Audio saved → {mp3_path}")
-
-    # Write VTT subtitle file with word-level timestamps
-    vtt_content = submaker.generate_subs(words_in_cue=1)
-    with open(vtt_path, "w", encoding="utf-8") as vtt_file:
-        vtt_file.write(vtt_content)
-    logger.info(f"Word-level VTT saved → {vtt_path}")
 
 
 def _get_audio_duration(mp3_path: Path) -> float:
@@ -121,10 +122,13 @@ def generate_audio(
     mp3_path = output_dir / "narration.mp3"
     vtt_path = output_dir / "narration.vtt"
 
-    asyncio.run(_generate_tts(narration, mp3_path, vtt_path, voice=voice))
+    _generate_tts(narration, mp3_path, voice=voice)
 
     duration = _get_audio_duration(mp3_path)
     logger.info(f"Audio duration: {duration:.2f}s")
+    
+    _generate_vtt_approx(narration, duration, vtt_path)
+    logger.info(f"Approximate word-level VTT saved → {vtt_path}")
 
     result = {
         "mp3_path": str(mp3_path),
@@ -218,7 +222,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate TTS audio from narration script.")
     parser.add_argument("--script", default="output/script.json", help="Path to script.json")
     parser.add_argument("--output", default="output", help="Output directory")
-    parser.add_argument("--voice", default=DEFAULT_VOICE, help="edge-tts voice name")
+    parser.add_argument("--voice", default=DEFAULT_VOICE, help="gTTS language code")
     parser.add_argument("--dry-run", action="store_true", help="Skip TTS; write placeholder files")
     args = parser.parse_args()
 
