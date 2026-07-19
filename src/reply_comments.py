@@ -98,25 +98,47 @@ def _is_spam(comment_text: str) -> bool:
     before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
-def _generate_reply(comment_text: str, topic: str, model_name: str = "gemini-2.0-flash") -> str:
+def _generate_reply(comment_text: str, topic: str, model_name: str = "gemini-1.5-flash") -> str:
     """Use Gemini to generate an on-brand reply."""
     _init_gemini()
-    model = genai.GenerativeModel(
-        model_name=model_name,
-        system_instruction=REPLY_SYSTEM_PROMPT,
-    )
     prompt = REPLY_USER_TEMPLATE.format(topic=topic, comment=comment_text[:300])
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.types.GenerationConfig(
-            temperature=0.6,
-            max_output_tokens=80,
-        ),
-        request_options={"timeout": 30},
-    )
-    reply = response.text.strip()
-    logger.info(f"Generated reply: {reply}")
-    return reply
+    try:
+        model = genai.GenerativeModel(
+            model_name=model_name,
+            system_instruction=REPLY_SYSTEM_PROMPT,
+        )
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.6,
+                max_output_tokens=80,
+            ),
+            request_options={"timeout": 30},
+        )
+        reply = response.text.strip()
+        logger.info(f"Generated reply: {reply}")
+        return reply
+    except Exception as e:
+        if "429" in str(e):
+            logger.warning(f"Hit 429 Quota Error on {model_name}. Attempting fallback...")
+            fallback_model = "gemini-1.5-pro" if "flash" in model_name else "gemini-1.5-flash"
+            logger.info(f"Calling fallback Gemini model: {fallback_model} ...")
+            model = genai.GenerativeModel(
+                model_name=fallback_model,
+                system_instruction=REPLY_SYSTEM_PROMPT,
+            )
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.6,
+                    max_output_tokens=80,
+                ),
+                request_options={"timeout": 30},
+            )
+            reply = response.text.strip()
+            logger.info(f"Fallback reply: {reply}")
+            return reply
+        raise
 
 
 def fetch_and_reply_comments(
@@ -124,7 +146,7 @@ def fetch_and_reply_comments(
     video_id: str,
     topic: str = "space",
     dry_run: bool = False,
-    model_name: str = "gemini-2.0-flash",
+    model_name: str = "gemini-1.5-flash",
 ) -> list[dict]:
     """
     Fetch recent comments on video_id, generate replies, post them.
@@ -222,7 +244,7 @@ def main():
     parser.add_argument("--auto", action="store_true",
                         help="Read video ID from output/upload_result.json")
     parser.add_argument("--output", default="output/", help="Directory for upload_result.json")
-    parser.add_argument("--model", default="gemini-2.0-flash")
+    parser.add_argument("--model", default="gemini-1.5-flash")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 

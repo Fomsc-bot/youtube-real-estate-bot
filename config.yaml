@@ -71,8 +71,8 @@ script:
   max_words: 72
   # Call-to-action appended to every script
   cta: "Follow for daily space facts."
-  # Gemini model for script + comment reply generation
-  gemini_model: "gemini-2.0-flash"
+  # Gemini model for script + comment reply generation (1.5-flash has better free tier limits)
+  gemini_model: "gemini-1.5-flash"
 
 metadata:
   # YouTube category: 28 = Science & Technology
