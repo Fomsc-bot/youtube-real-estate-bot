@@ -144,9 +144,9 @@ def _call_gemini(model_name: str, system_prompt: str, user_prompt: str) -> str:
         return text
     except Exception as e:
         # Check if it's a 429 quota error
-        if "429" in str(e):
-            logger.warning(f"Hit 429 Quota Error on {model_name}. Attempting fallback...")
-            fallback_model = "gemini-1.5-pro" if "flash" in model_name else "gemini-1.5-flash"
+        if "429" in str(e) or "404" in str(e):
+            logger.warning(f"Hit 429/404 Error on {model_name}. Attempting fallback...")
+            fallback_model = "gemini-2.5-flash" if "lite" in model_name else "gemini-2.5-flash-lite"
             logger.info(f"Calling fallback Gemini model: {fallback_model} ...")
             model = genai.GenerativeModel(
                 model_name=fallback_model,
@@ -180,7 +180,7 @@ def _word_count(text: str) -> int:
     return len(text.split())
 
 
-def generate_apod_script(apod_data: dict, model_name: str = "gemini-1.5-flash") -> dict:
+def generate_apod_script(apod_data: dict, model_name: str = "gemini-2.5-flash-lite") -> dict:
     """
     Generate narration script from APOD metadata using Gemini.
     Returns dict with narration, hook_text, title_keyword, word_count.
@@ -213,7 +213,7 @@ def generate_apod_script(apod_data: dict, model_name: str = "gemini-1.5-flash") 
     }
 
 
-def generate_neo_script(neo_data: dict, model_name: str = "gemini-1.5-flash") -> dict:
+def generate_neo_script(neo_data: dict, model_name: str = "gemini-2.5-flash-lite") -> dict:
     """Generate narration script from NEO asteroid data using Gemini."""
     _init_gemini()
 
@@ -269,7 +269,7 @@ def main():
     parser.add_argument("--apod", default="output/apod.json", help="Path to apod.json")
     parser.add_argument("--neo", default=None, help="Path to neo.json (for asteroid watch)")
     parser.add_argument("--output", default="output/script.json", help="Output path for script JSON")
-    parser.add_argument("--model", default="gemini-1.5-flash", help="Gemini model name")
+    parser.add_argument("--model", default="gemini-2.5-flash-lite", help="Gemini model name")
     parser.add_argument("--dry-run", action="store_true", help="Skip Gemini API; write fixture data")
     args = parser.parse_args()
 

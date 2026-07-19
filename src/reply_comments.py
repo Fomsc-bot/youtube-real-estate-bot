@@ -98,7 +98,7 @@ def _is_spam(comment_text: str) -> bool:
     before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
-def _generate_reply(comment_text: str, topic: str, model_name: str = "gemini-1.5-flash") -> str:
+def _generate_reply(comment_text: str, topic: str, model_name: str = "gemini-2.5-flash-lite") -> str:
     """Use Gemini to generate an on-brand reply."""
     _init_gemini()
     prompt = REPLY_USER_TEMPLATE.format(topic=topic, comment=comment_text[:300])
@@ -119,9 +119,9 @@ def _generate_reply(comment_text: str, topic: str, model_name: str = "gemini-1.5
         logger.info(f"Generated reply: {reply}")
         return reply
     except Exception as e:
-        if "429" in str(e):
-            logger.warning(f"Hit 429 Quota Error on {model_name}. Attempting fallback...")
-            fallback_model = "gemini-1.5-pro" if "flash" in model_name else "gemini-1.5-flash"
+        if "429" in str(e) or "404" in str(e):
+            logger.warning(f"Hit 429/404 Error on {model_name}. Attempting fallback...")
+            fallback_model = "gemini-2.5-flash" if "lite" in model_name else "gemini-2.5-flash-lite"
             logger.info(f"Calling fallback Gemini model: {fallback_model} ...")
             model = genai.GenerativeModel(
                 model_name=fallback_model,
@@ -146,7 +146,7 @@ def fetch_and_reply_comments(
     video_id: str,
     topic: str = "space",
     dry_run: bool = False,
-    model_name: str = "gemini-1.5-flash",
+    model_name: str = "gemini-2.5-flash-lite",
 ) -> list[dict]:
     """
     Fetch recent comments on video_id, generate replies, post them.
@@ -244,7 +244,7 @@ def main():
     parser.add_argument("--auto", action="store_true",
                         help="Read video ID from output/upload_result.json")
     parser.add_argument("--output", default="output/", help="Directory for upload_result.json")
-    parser.add_argument("--model", default="gemini-1.5-flash")
+    parser.add_argument("--model", default="gemini-2.5-flash-lite")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
