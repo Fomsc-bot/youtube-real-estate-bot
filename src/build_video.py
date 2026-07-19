@@ -28,6 +28,7 @@ import re
 import shutil
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 from typing import Optional
 
@@ -109,7 +110,7 @@ def prepare_image(image_path: Path, output_dir: Path) -> Path:
 def _build_filter_complex(
     words: list[dict],
     audio_duration: float,
-    hook_text: str,
+    hook_text_path: Path,
     font_path: str,
     logo_exists: bool,
 ) -> str:
@@ -146,12 +147,12 @@ def _build_filter_complex(
         logger.warning(f"Custom font not found at {font_path}, using system font: {FALLBACK_FONT}")
 
     # ── 4. Hook text overlay (first hook_duration seconds) ───────────────────
-    hook_clean = hook_text.replace("'", "\\'").replace(":", "\\:").replace(",", "\\,").upper()
     hook_duration = 2.5
+    hook_path_escaped = str(hook_text_path).replace("\\", "/").replace(":", "\\:")
     filters.append(
         f"[composited]drawtext="
         f"fontfile={font_path_escaped}:"
-        f"text='{hook_clean}':"
+        f"textfile='{hook_path_escaped}':"
         f"fontsize=110:"
         f"fontcolor=white:"
         f"bordercolor=black:"
@@ -266,6 +267,12 @@ def build_video(
         script_data = json.load(f)
     hook_text = script_data.get("hook_text", "Today in Space")
 
+    # Word-wrap the hook text and write to a file for FFmpeg to read
+    wrapped_hook = textwrap.fill(hook_text.upper(), width=14)
+    hook_text_path = output_dir / "hook_text.txt"
+    with open(hook_text_path, "w", encoding="utf-8") as f:
+        f.write(wrapped_hook)
+
     # Prepare image
     prepared_image = prepare_image(image_path, output_dir)
 
@@ -297,7 +304,7 @@ def build_video(
     filter_str, final_label = _build_filter_complex(
         words=words,
         audio_duration=audio_duration,
-        hook_text=hook_text,
+        hook_text_path=hook_text_path,
         font_path=font_path,
         logo_exists=logo_prepared is not None,
     )
