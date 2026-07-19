@@ -1,0 +1,56 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+wheels/
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+venv/
+.venv/
+ENV/
+env/
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.tox/
+
+# ── Project secrets — NEVER COMMIT ───────────────────────────────────────────
+.env
+*.json
+!package.json
+# (allow config JSON but not credentials)
+output/yt_credentials_local.json
+
+# ── Pipeline output (generated files, not committed) ─────────────────────────
+output/
+*.mp4
+*.mp3
+*.wav
+*.vtt
+*.srt
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+pip-log.txt
+
+# ── OS junk ───────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints
+*.ipynb

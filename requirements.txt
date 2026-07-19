@@ -1,0 +1,25 @@
+# Core HTTP / Google APIs
+requests==2.32.3
+tenacity==8.3.0
+google-api-python-client==2.136.0
+google-auth==2.30.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+
+# Google Gemini SDK (script generation + comment replies)
+google-generativeai==0.7.2
+
+# NASA / data processing
+Pillow==10.4.0
+
+# Text-to-Speech
+edge-tts==6.1.12
+
+# YAML config parsing
+PyYAML==6.0.2
+
+# Video assembly (FFmpeg Python wrapper for subprocess orchestration)
+ffmpeg-python==0.2.0
+
+# Utilities
+python-dotenv==1.0.1

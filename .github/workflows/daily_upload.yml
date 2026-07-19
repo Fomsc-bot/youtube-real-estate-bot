@@ -1,0 +1,124 @@
+name: "🌌 The Universe — Daily Shorts Upload"
+
+on:
+  schedule:
+    - cron: "0 14 * * *"   # 2:00 PM UTC = 7:30 PM IST — daily
+  workflow_dispatch:         # Manual trigger from Actions tab
+    inputs:
+      dry_run:
+        description: "Dry run (no upload)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+      neo_mode:
+        description: "Force Asteroid Watch mode"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+      apod_date:
+        description: "Specific APOD date (YYYY-MM-DD, blank = today)"
+        required: false
+        default: ""
+
+jobs:
+  upload-shorts:
+    name: "Build & Upload Space Short"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ── 1. Checkout ─────────────────────────────────────────────────────────
+      - name: "📦 Checkout Repository"
+        uses: actions/checkout@v4
+
+      # ── 2. Python setup ─────────────────────────────────────────────────────
+      - name: "🐍 Set up Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ── 3. System dependencies ───────────────────────────────────────────────
+      - name: "🔧 Install System Dependencies (FFmpeg + fonts)"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg \
+            fonts-dejavu-core \
+            wget
+          echo "FFmpeg version: $(ffmpeg -version | head -1)"
+
+      # ── 4. Download Montserrat Bold font ─────────────────────────────────────
+      - name: "🔤 Download Montserrat Bold font"
+        run: |
+          mkdir -p assets/fonts
+          if [ ! -f assets/fonts/Montserrat-Bold.ttf ]; then
+            wget -q -O assets/fonts/Montserrat-Bold.ttf \
+              "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Bold.ttf"
+            echo "Font downloaded: $(du -h assets/fonts/Montserrat-Bold.ttf)"
+          else
+            echo "Font already present (cached)"
+          fi
+
+      # ── 5. Python dependencies ───────────────────────────────────────────────
+      - name: "📚 Install Python Dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ── 6. Create output directory ────────────────────────────────────────────
+      - name: "📁 Prepare output directory"
+        run: mkdir -p output
+
+      # ── 7. Run the pipeline ───────────────────────────────────────────────────
+      - name: "🚀 Run The Universe Pipeline"
+        env:
+          NASA_API_KEY: ${{ secrets.NASA_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          YOUTUBE_CREDENTIALS_JSON: ${{ secrets.YOUTUBE_CREDENTIALS_JSON }}
+        run: |
+          DRY_RUN_FLAG=""
+          NEO_FLAG=""
+          DATE_FLAG=""
+
+          # Handle workflow_dispatch inputs
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          if [ "${{ github.event.inputs.neo_mode }}" = "true" ]; then
+            NEO_FLAG="--neo"
+          fi
+          if [ -n "${{ github.event.inputs.apod_date }}" ]; then
+            DATE_FLAG="--date ${{ github.event.inputs.apod_date }}"
+          fi
+
+          python main.py $DRY_RUN_FLAG $NEO_FLAG $DATE_FLAG
+
+      # ── 8. Upload artifacts on failure for debugging ──────────────────────────
+      - name: "📎 Upload debug artifacts"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "pipeline-output-${{ github.run_id }}"
+          path: |
+            output/apod.json
+            output/script.json
+            output/audio_meta.json
+            output/metadata.json
+            output/upload_result.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # ── 9. Failure notice ─────────────────────────────────────────────────────
+      - name: "❌ Report Pipeline Failure"
+        if: failure()
+        run: |
+          echo "::error title=Pipeline Failed::The Universe daily upload pipeline failed."
+          echo "::error::Check the steps above. Common causes:"
+          echo "::error::  - NASA_API_KEY not set (use DEMO_KEY fallback)"
+          echo "::error::  - GEMINI_API_KEY missing or quota exceeded"
+          echo "::error::  - YOUTUBE_CREDENTIALS_JSON missing or refresh token expired"
+          echo "::error::  - FFmpeg error in build_video step"
+          echo "::error::Run locally with: python main.py --dry-run"
