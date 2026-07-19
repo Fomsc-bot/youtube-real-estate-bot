@@ -72,7 +72,7 @@ script:
   # Call-to-action appended to every script
   cta: "Follow for daily space facts."
   # Gemini model for script + comment reply generation (1.5-flash has better free tier limits)
-  gemini_model: "gemini-2.5-flash-lite"
+  gemini_model: "gemini-2.0-flash-lite"
 
 metadata:
   # YouTube category: 28 = Science & Technology
