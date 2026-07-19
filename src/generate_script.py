@@ -136,6 +136,7 @@ def _call_gemini(model_name: str, system_prompt: str, user_prompt: str) -> str:
             generation_config=genai.types.GenerationConfig(
                 temperature=0.7,
                 max_output_tokens=512,
+                response_mime_type="application/json",
             ),
             request_options={"timeout": 30},   # 30-second hard timeout
         )
@@ -157,6 +158,7 @@ def _call_gemini(model_name: str, system_prompt: str, user_prompt: str) -> str:
                 generation_config=genai.types.GenerationConfig(
                     temperature=0.7,
                     max_output_tokens=512,
+                    response_mime_type="application/json",
                 ),
                 request_options={"timeout": 30},
             )
