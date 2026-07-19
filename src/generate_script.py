@@ -256,20 +256,33 @@ def generate_neo_script(neo_data: dict, model_name: str = "gemini-2.0-flash-lite
         hazardous_count=neo_data.get("hazardous_count", 0),
     )
 
-    raw = _call_gemini(model_name, NEO_SYSTEM_PROMPT, user_prompt)
-    parsed = _parse_json_response(raw)
-
-    narration = parsed.get("narration", "").strip()
-    wc = _word_count(narration)
-    logger.info(f"Generated NEO script: {wc} words")
-
-    return {
-        "narration": narration,
-        "hook_text": parsed.get("hook_text", "Asteroid Close Call"),
-        "title_keyword": "Asteroid Watch",
-        "word_count": wc,
-        "content_type": "asteroid_watch",
-    }
+    try:
+        raw = _call_gemini(model_name, NEO_SYSTEM_PROMPT, user_prompt)
+        parsed = _parse_json_response(raw)
+        
+        # Merge cta
+        cta = config.get("youtube", {}).get("cta", "Follow for daily space facts.")
+        if cta not in parsed.get("narration", ""):
+            parsed["narration"] = f"{parsed.get('narration', '')} {cta}"
+            
+        parsed["word_count"] = _word_count(parsed.get("narration", ""))
+        parsed["content_type"] = "asteroid_watch"
+        return parsed
+    except Exception as e:
+        logger.error(f"Gemini generation failed completely: {e}")
+        logger.warning("Falling back to local extraction from NASA data (No AI used).")
+        
+        name = top.get("name", "An asteroid")
+        date = top.get("date", "this week")
+        narration = f"This week, {name} makes its closest approach on {date}. Follow for daily space facts."
+        
+        return {
+            "hook_text": "Asteroid Close Call",
+            "title_keyword": "Asteroid Watch",
+            "narration": narration,
+            "word_count": _word_count(narration),
+            "content_type": "asteroid_watch",
+        }
 
 
 # ── DRY RUN fixture ────────────────────────────────────────────────────────────
