@@ -2,7 +2,8 @@ name: "🌌 The Universe — Daily Shorts Upload"
 
 on:
   schedule:
-    - cron: "0 14 * * *"   # 2:00 PM UTC = 7:30 PM IST — daily
+    #- cron: "0 14 * * *"   # 2:00 PM UTC = 7:30 PM IST — daily
+    - cron: '30 12 * * *'
   workflow_dispatch:         # Manual trigger from Actions tab
     inputs:
       dry_run:
