@@ -40,8 +40,8 @@ try:
     def _make_retry():
         return retry(
             retry=retry_if_exception_type(Exception),
-            stop=stop_after_attempt(5),
-            wait=wait_exponential(multiplier=1, min=2, max=30),
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=2, max=15),
             before_sleep=before_sleep_log(logger, logging.WARNING),
             reraise=True,
         )
@@ -120,23 +120,37 @@ def _init_gemini() -> None:
     genai.configure(api_key=api_key)
 
 
-@_make_retry()
-def _call_gemini(model_name: str, system_prompt: str, user_prompt: str) -> str:
-    model = genai.GenerativeModel(
-        model_name=model_name,
-        system_instruction=system_prompt,
-    )
-    logger.info(f"Calling Gemini model: {model_name} ...")
-    response = model.generate_content(
-        user_prompt,
-        generation_config=genai.types.GenerationConfig(
-            temperature=0.7,
-            max_output_tokens=512,
-            response_mime_type="application/json",
-        ),
-        request_options={"timeout": 30},
-    )
-    return response.text.strip()
+def _call_gemini(system_prompt: str, user_prompt: str) -> str:
+    """Call Gemini with multi-model automatic failover."""
+    models_to_try = ["gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+    last_err = None
+
+    for model_name in models_to_try:
+        try:
+            logger.info(f"Calling Gemini model: {model_name} ...")
+            model = genai.GenerativeModel(
+                model_name=model_name,
+                system_instruction=system_prompt,
+            )
+            response = model.generate_content(
+                user_prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7,
+                    max_output_tokens=512,
+                    response_mime_type="application/json",
+                ),
+                request_options={"timeout": 30},
+            )
+            text = response.text.strip()
+            if text:
+                return text
+        except Exception as e:
+            logger.warning(f"Gemini model '{model_name}' failed: {e}. Trying fallback model...")
+            last_err = e
+
+    if last_err:
+        raise last_err
+    raise RuntimeError("All Gemini model attempts failed.")
 
 
 def _parse_json_response(raw: str) -> dict:
@@ -152,7 +166,6 @@ def _parse_json_response(raw: str) -> dict:
 def generate_viral_script(
     niche: str = "real_estate",
     topic: Optional[str] = None,
-    model_name: str = "gemini-2.0-flash-lite",
     source_content: Optional[dict] = None,
 ) -> dict:
     """Generate MoneyPrinterTurbo viral script for real_estate or space."""
@@ -172,7 +185,7 @@ def generate_viral_script(
 
     try:
         _init_gemini()
-        raw = _call_gemini(model_name, system_prompt, user_prompt)
+        raw = _call_gemini(system_prompt, user_prompt)
         parsed = _parse_json_response(raw)
 
         if parsed and "narration" in parsed:
