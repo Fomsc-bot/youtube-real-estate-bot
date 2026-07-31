@@ -13,6 +13,8 @@ Key features (MoneyPrinterTurbo Architecture):
 Usage:
     python src/generate_script.py --niche real_estate
     python src/generate_script.py --niche space --dry-run
+
+Note: Uses google-genai SDK (google.genai), NOT the deprecated google-generativeai.
 """
 
 import argparse
@@ -25,9 +27,11 @@ from pathlib import Path
 from typing import Optional
 
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types as genai_types
 except ImportError:
     genai = None
+    genai_types = None
 
 try:
     from tenacity import (
@@ -111,37 +115,41 @@ Output MUST be in raw JSON (no markdown fences):
 """
 
 
-def _init_gemini() -> None:
+def _get_gemini_client():
+    """Create and return a google.genai Client instance."""
     if genai is None:
-        raise EnvironmentError("google-generativeai module not installed.")
+        raise EnvironmentError("google-genai module not installed. Run: pip install google-genai")
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise EnvironmentError("GEMINI_API_KEY environment variable is not set.")
-    genai.configure(api_key=api_key)
+    return genai.Client(api_key=api_key)
 
 
 def _call_gemini(system_prompt: str, user_prompt: str) -> str:
-    """Call Gemini with multi-model automatic failover."""
-    models_to_try = ["gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+    """Call Gemini with multi-model automatic failover using google.genai SDK."""
+    models_to_try = [
+        "gemini-2.0-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+    ]
+    client = _get_gemini_client()
     last_err = None
 
     for model_name in models_to_try:
         try:
             logger.info(f"Calling Gemini model: {model_name} ...")
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                system_instruction=system_prompt,
-            )
-            response = model.generate_content(
-                user_prompt,
-                generation_config=genai.types.GenerationConfig(
+            response = client.models.generate_content(
+                model=model_name,
+                contents=user_prompt,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=system_prompt,
                     temperature=0.7,
                     max_output_tokens=512,
                     response_mime_type="application/json",
                 ),
-                request_options={"timeout": 30},
             )
-            text = response.text.strip()
+            text = response.text.strip() if response.text else ""
             if text:
                 return text
         except Exception as e:
@@ -184,7 +192,8 @@ def generate_viral_script(
         system_prompt = SPACE_SYSTEM_PROMPT
 
     try:
-        _init_gemini()
+        # Validate client can be created before calling
+        _get_gemini_client()
         raw = _call_gemini(system_prompt, user_prompt)
         parsed = _parse_json_response(raw)
 

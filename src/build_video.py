@@ -155,9 +155,15 @@ def _build_filter_complex(
         current_label = next_label
 
     # ── 4. Progress Bar Overlay ──
+    # Use geq (per-pixel equation) filter instead of drawbox dynamic-width expression.
+    # drawbox w='iw*min(1,t/N)' is unreliable across FFmpeg versions (error code 234).
+    # geq evaluates per-pixel: top 16 rows are painted yellow if X < iw*(t/duration).
     filters.append(
-        f"[{current_label}]drawbox="
-        f"x=0:y=0:w='min(w,w*(t/{total_duration:.2f}))':h=16:color=yellow@0.9:t=fill[v_prog]"
+        f"[{current_label}]geq="
+        f"r='if(lte(Y,16)*lte(X,W*min(1\\,t/{total_duration:.4f})),255,r(X\\,Y))':"
+        f"g='if(lte(Y,16)*lte(X,W*min(1\\,t/{total_duration:.4f})),220,g(X\\,Y))':"
+        f"b='if(lte(Y,16)*lte(X,W*min(1\\,t/{total_duration:.4f})),0,b(X\\,Y))':"
+        f"a='alpha(X\\,Y)'[v_prog]"
     )
     current_label = "v_prog"
 
