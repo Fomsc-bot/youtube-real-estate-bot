@@ -155,15 +155,14 @@ def _build_filter_complex(
         current_label = next_label
 
     # ── 4. Progress Bar Overlay ──
-    # Use geq (per-pixel equation) filter instead of drawbox dynamic-width expression.
-    # drawbox w='iw*min(1,t/N)' is unreliable across FFmpeg versions (error code 234).
-    # geq evaluates per-pixel: top 16 rows are painted yellow if X < iw*(t/duration).
+    # Written to -filter_complex_script file, so NO backslash-escaping of commas.
+    # geq paints top 8px yellow when pixel X is within W*(t/duration).
     filters.append(
         f"[{current_label}]geq="
-        f"r='if(lte(Y,16)*lte(X,W*min(1\\,t/{total_duration:.4f})),255,r(X\\,Y))':"
-        f"g='if(lte(Y,16)*lte(X,W*min(1\\,t/{total_duration:.4f})),220,g(X\\,Y))':"
-        f"b='if(lte(Y,16)*lte(X,W*min(1\\,t/{total_duration:.4f})),0,b(X\\,Y))':"
-        f"a='alpha(X\\,Y)'[v_prog]"
+        f"r='if(lte(Y,8)*lte(X,W*min(1,t/{total_duration:.4f})),255,r(X,Y))':"
+        f"g='if(lte(Y,8)*lte(X,W*min(1,t/{total_duration:.4f})),220,g(X,Y))':"
+        f"b='if(lte(Y,8)*lte(X,W*min(1,t/{total_duration:.4f})),0,b(X,Y))':"
+        f"a='alpha(X,Y)'[v_prog]"
     )
     current_label = "v_prog"
 
@@ -284,6 +283,18 @@ def build_video(
             from src.fetch_content import create_fallback_scene_image
             primary_image = create_fallback_scene_image(hook_text, "Real Estate", output_dir / "default_visual.jpg")
 
+    # Write filtergraph to a temp script file.
+    # -filter_complex_script avoids:
+    #   (a) command-line length limits with 40+ chained drawtext filters
+    #   (b) shell-escaping issues causing 'Error parsing global options' (code 234)
+    import tempfile
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".txt", delete=False, encoding="utf-8"
+    ) as fcs:
+        fcs.write(filter_str)
+        filter_script_path = fcs.name
+    logger.info(f"Filter script -> {filter_script_path} ({len(filter_str)} chars)")
+
     cmd = [
         "ffmpeg", "-y",
         "-loop", "1", "-i", str(primary_image.resolve()),
@@ -300,7 +311,7 @@ def build_video(
         cmd += ["-i", str(bgm_path.resolve())]
 
     cmd += [
-        "-filter_complex", filter_str,
+        "-filter_complex_script", filter_script_path,
         "-map", f"[{final_v_label}]",
         "-map", f"[{final_a_label}]",
         "-t", str(total_duration),
@@ -318,8 +329,15 @@ def build_video(
 
     logger.info("Executing FFmpeg Video Compositor...")
     res = subprocess.run(cmd, capture_output=True, text=True)
+
+    # Clean up temp filter script
+    try:
+        os.unlink(filter_script_path)
+    except OSError:
+        pass
+
     if res.returncode != 0:
-        logger.error(f"FFmpeg Error Output:\n{res.stderr[-2000:]}")
+        logger.error(f"FFmpeg Error Output:\n{res.stderr[-3000:]}")
         raise RuntimeError(f"FFmpeg failed with code {res.returncode}")
 
     size_mb = output_path.stat().st_size / (1024 * 1024)
