@@ -14,9 +14,9 @@ on:
       niche:
         description: "Select Niche"
         required: false
-        default: "real_estate"
+        default: "space"
         type: choice
-        options: ["real_estate", "space"]
+        options: ["space", "real_estate"]
       topic:
         description: "Custom Topic Prompt (optional)"
         required: false
@@ -74,7 +74,7 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           DRY_RUN_FLAG=""
-          NICHE_FLAG=""
+          NICHE_FLAG="--niche space"
           TOPIC_FLAG=""
 
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then

@@ -10,8 +10,8 @@ pipeline:
   backoff_base: 2.0
 
 niche:
-  # Default niche: real_estate | space | luxury_architecture | finance_hacks
-  default: "real_estate"
+  # Default niche: space | real_estate | luxury_architecture | finance_hacks
+  default: "space"
   real_estate:
     cta: "Subscribe for daily luxury real estate tours & secrets!"
     category_id: "24" # Entertainment / Real Estate
