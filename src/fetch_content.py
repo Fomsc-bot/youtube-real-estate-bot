@@ -203,6 +203,7 @@ def fetch_multi_scene_content(script_data: dict, output_dir: Path) -> List[dict]
 
 def fetch_apod(api_key: str, output_dir: Path, date: Optional[str] = None) -> dict:
     """Fetch NASA APOD for space niche."""
+    api_key = api_key or os.environ.get("NASA_API_KEY") or "DEMO_KEY"
     params = {"api_key": api_key}
     if date:
         params["date"] = date

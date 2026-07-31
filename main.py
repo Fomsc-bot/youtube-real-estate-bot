@@ -77,7 +77,7 @@ def main(
     else:
         source_content = None
         if niche == "space":
-            nasa_key = os.environ.get("NASA_API_KEY", "DEMO_KEY")
+            nasa_key = os.environ.get("NASA_API_KEY") or "DEMO_KEY"
             try:
                 source_content = fetch_apod(nasa_key, output_dir, date=date)
                 save_json(source_content, output_dir / "apod.json")

@@ -159,9 +159,9 @@ def _build_filter_complex(
     # geq paints top 8px yellow when pixel X is within W*(t/duration).
     filters.append(
         f"[{current_label}]geq="
-        f"r='if(lte(Y,8)*lte(X,W*min(1,t/{total_duration:.4f})),255,r(X,Y))':"
-        f"g='if(lte(Y,8)*lte(X,W*min(1,t/{total_duration:.4f})),220,g(X,Y))':"
-        f"b='if(lte(Y,8)*lte(X,W*min(1,t/{total_duration:.4f})),0,b(X,Y))':"
+        f"r='if(lte(Y,8)*lte(X,W*t/{total_duration:.4f}),255,r(X,Y))':"
+        f"g='if(lte(Y,8)*lte(X,W*t/{total_duration:.4f}),220,g(X,Y))':"
+        f"b='if(lte(Y,8)*lte(X,W*t/{total_duration:.4f}),0,b(X,Y))':"
         f"a='alpha(X,Y)'[v_prog]"
     )
     current_label = "v_prog"

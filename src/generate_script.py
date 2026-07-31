@@ -128,10 +128,10 @@ def _get_gemini_client():
 def _call_gemini(system_prompt: str, user_prompt: str) -> str:
     """Call Gemini with multi-model automatic failover using google.genai SDK."""
     models_to_try = [
-        "gemini-2.0-flash-lite",
+        "gemini-2.5-flash",
         "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash-8b",
     ]
     client = _get_gemini_client()
     last_err = None
