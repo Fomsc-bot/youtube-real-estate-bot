@@ -1,13 +1,14 @@
 """
-fetch_content.py — Step 1 of The Universe pipeline.
+fetch_content.py — Step 1 & Visual Fetcher for YouTube Shorts
 
-Fetches NASA APOD (Astronomy Picture of the Day) data and downloads
-the image to disk. Handles video-type APODs gracefully by fetching
-the previous day's image instead.
+Inspired by MoneyPrinterTurbo:
+  1. Reads sentence keywords from script.json
+  2. Searches Pexels API / Pixabay / HD stock repositories for 9:16 vertical videos
+  3. Downloads individual HD visual clips per sentence
+  4. Also supports NASA APOD content fetching for space niche
 
 Usage:
-    python src/fetch_content.py --output output/
-    python src/fetch_content.py --output output/ --date 2024-07-04
+    python src/fetch_content.py --script output/script.json --output output/
     python src/fetch_content.py --dry-run
 """
 
@@ -15,21 +16,38 @@ import argparse
 import json
 import logging
 import os
+import random
 import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
-from urllib.parse import urlparse
+from typing import Optional, List
+from urllib.parse import quote
 
 import requests
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-    before_sleep_log,
-)
+from PIL import Image, ImageDraw, ImageFont
+
+try:
+    from tenacity import (
+        retry,
+        retry_if_exception_type,
+        stop_after_attempt,
+        wait_exponential,
+        before_sleep_log,
+    )
+    def _make_retry():
+        return retry(
+            retry=retry_if_exception_type((requests.exceptions.RequestException, requests.exceptions.Timeout)),
+            stop=stop_after_attempt(4),
+            wait=wait_exponential(multiplier=1, min=2, max=20),
+            before_sleep=before_sleep_log(logger, logging.WARNING),
+            reraise=True,
+        )
+except ImportError:
+    def _make_retry():
+        def decorator(func):
+            return func
+        return decorator
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -39,247 +57,238 @@ logging.basicConfig(
 )
 logger = logging.getLogger("fetch_content")
 
-# ── Config ─────────────────────────────────────────────────────────────────────
-APOD_URL = "https://api.nasa.gov/planetary/apod"
-NEO_URL = "https://api.nasa.gov/neo/rest/v1/feed"
-SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".tiff", ".webp"}
-MAX_FALLBACK_DAYS = 7   # How many days back to look if today is a video
-
-
-# ── Retry decorator ────────────────────────────────────────────────────────────
-def _make_retry():
-    return retry(
-        retry=retry_if_exception_type((requests.exceptions.RequestException, requests.exceptions.Timeout)),
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=1, min=2, max=30),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-        reraise=True,
-    )
+PEXELS_SEARCH_URL = "https://api.pexels.com/videos/search"
+NASA_APOD_URL = "https://api.nasa.gov/planetary/apod"
 
 
 @_make_retry()
-def _get_apod(api_key: str, date: Optional[str] = None) -> dict:
-    """Call APOD API and return the JSON response dict."""
-    params = {"api_key": api_key, "thumbs": True}  # thumbs=True gives thumbnail for videos
-    if date:
-        params["date"] = date
-
-    logger.info(f"Calling APOD API for date={date or 'today'} ...")
-    resp = requests.get(APOD_URL, params=params, timeout=20)
+def fetch_pexels_video(keyword: str, pexels_api_key: str, dest_path: Path) -> Optional[Path]:
+    """Search Pexels API for a 9:16 vertical video matching keyword."""
+    headers = {"Authorization": pexels_api_key}
+    params = {
+        "query": keyword,
+        "orientation": "portrait",
+        "per_page": 5,
+        "size": "medium",
+    }
+    
+    logger.info(f"Searching Pexels API for vertical video: '{keyword}'...")
+    resp = requests.get(PEXELS_SEARCH_URL, headers=headers, params=params, timeout=15)
     resp.raise_for_status()
     data = resp.json()
-    logger.info(f"APOD response: title='{data.get('title')}', media_type='{data.get('media_type')}'")
-    return data
+    
+    videos = data.get("videos", [])
+    if not videos:
+        logger.warning(f"No vertical videos found on Pexels for keyword '{keyword}'")
+        return None
 
-
-@_make_retry()
-def _download_image(url: str, dest_path: Path) -> Path:
-    """Download image from URL to dest_path."""
-    logger.info(f"Downloading image from {url} → {dest_path}")
-    with requests.get(url, stream=True, timeout=60) as resp:
-        resp.raise_for_status()
+    vid = random.choice(videos[:3])
+    vid_files = vid.get("video_files", [])
+    
+    hd_files = [vf for vf in vid_files if vf.get("width", 0) and vf.get("height", 0)]
+    hd_files.sort(key=lambda x: (x.get("width", 0) * x.get("height", 0)), reverse=True)
+    
+    if not hd_files:
+        return None
+        
+    video_url = hd_files[0]["link"]
+    logger.info(f"Downloading Pexels video clip -> {dest_path}")
+    
+    with requests.get(video_url, stream=True, timeout=30) as r:
+        r.raise_for_status()
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         with open(dest_path, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=65536):
+            for chunk in r.iter_content(chunk_size=65536):
                 f.write(chunk)
-    size_kb = dest_path.stat().st_size // 1024
-    logger.info(f"Image saved to {dest_path} ({size_kb} KB)")
+                
     return dest_path
 
 
-def _image_ext_from_url(url: str) -> str:
-    """Extract the file extension from a URL, default to .jpg."""
-    path = urlparse(url).path
-    ext = Path(path).suffix.lower()
-    return ext if ext in SUPPORTED_IMAGE_EXTENSIONS else ".jpg"
+def create_fallback_scene_image(text_label: str, keyword: str, dest_path: Path) -> Path:
+    """Generate high-res procedural 9:16 visual asset when stock video API is unavailable."""
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    width, height = 1080, 1920
+    
+    img = Image.new("RGB", (width, height), (15, 20, 30))
+    draw = ImageDraw.Draw(img)
+    
+    for r in range(400, 100, -50):
+        draw.ellipse([width//2 - r, height//2 - r, width//2 + r, height//2 + r],
+                     outline=(40, 60, 90), width=4)
+        
+    draw.rectangle([80, height//2 - 200, width - 80, height//2 + 200],
+                   fill=(25, 35, 55), outline=(212, 175, 55), width=4)
+    
+    try:
+        font_lg = ImageFont.truetype("arial.ttf", 52)
+        font_sm = ImageFont.truetype("arial.ttf", 36)
+    except IOError:
+        font_lg = ImageFont.load_default()
+        font_sm = ImageFont.load_default()
+        
+    draw.text((width//2, height//2 - 60), keyword.upper(), fill=(212, 175, 55), font=font_lg, anchor="mm")
+    
+    words = text_label.split()
+    lines = []
+    curr = ""
+    for w in words:
+        if len(curr + " " + w) <= 30:
+            curr += " " + w
+        else:
+            lines.append(curr.strip())
+            curr = w
+    if curr:
+        lines.append(curr.strip())
+        
+    y = height//2 + 20
+    for line in lines[:3]:
+        draw.text((width//2, y), line, fill=(255, 255, 255), font=font_sm, anchor="mm")
+        y += 45
+
+    img.save(dest_path, "JPEG", quality=95)
+    logger.info(f"Generated procedural visual scene -> {dest_path}")
+    return dest_path
+
+
+def fetch_multi_scene_content(script_data: dict, output_dir: Path) -> List[dict]:
+    """
+    Fetch / generate scene visual clips matching every sentence in the script.
+    """
+    scenes_dir = output_dir / "scenes"
+    scenes_dir.mkdir(parents=True, exist_ok=True)
+    
+    pexels_key = os.environ.get("PEXELS_API_KEY", "").strip()
+    sentences = script_data.get("sentences", [])
+    
+    if not sentences:
+        narration = script_data.get("narration", "Luxury Real Estate Tour")
+        sentences = [{"text": narration, "keywords": [script_data.get("title_keyword", "Real Estate")]}]
+        
+    scenes_meta = []
+    
+    for i, s in enumerate(sentences):
+        text = s.get("text", "")
+        keywords = s.get("keywords", ["luxury property"])
+        kw = keywords[0] if keywords else "real estate"
+        
+        video_dest = scenes_dir / f"scene_{i}.mp4"
+        image_dest = scenes_dir / f"scene_{i}.jpg"
+        
+        fetched_path = None
+        media_type = "image"
+        
+        if pexels_key:
+            try:
+                fetched_path = fetch_pexels_video(kw, pexels_key, video_dest)
+                if fetched_path:
+                    media_type = "video"
+            except Exception as e:
+                logger.warning(f"Pexels fetch failed for '{kw}': {e}")
+
+        if not fetched_path:
+            fetched_path = create_fallback_scene_image(text, kw, image_dest)
+            media_type = "image"
+
+        scenes_meta.append({
+            "scene_index": i,
+            "text": text,
+            "keyword": kw,
+            "media_path": str(fetched_path),
+            "media_type": media_type,
+        })
+        
+    save_json({"scenes": scenes_meta}, output_dir / "scenes_meta.json")
+    return scenes_meta
 
 
 def fetch_apod(api_key: str, output_dir: Path, date: Optional[str] = None) -> dict:
-    """
-    Fetch APOD data. If today's APOD is a video, walk back up to
-    MAX_FALLBACK_DAYS until we find an image.
-
-    Returns a metadata dict ready to be saved as apod.json.
-    """
-    check_date = date  # None = today
-
-    for attempt in range(MAX_FALLBACK_DAYS + 1):
-        data = _get_apod(api_key, date=check_date)
-        media_type = data.get("media_type", "image")
-
-        if media_type == "image":
-            image_url = data["url"]
-            hdurl = data.get("hdurl", image_url)
-            ext = _image_ext_from_url(hdurl)
-            dest = output_dir / f"apod_image{ext}"
-            _download_image(hdurl, dest)
-
-            result = {
-                "date": data.get("date"),
-                "title": data.get("title", ""),
-                "explanation": data.get("explanation", ""),
-                "url": image_url,
-                "hdurl": hdurl,
-                "media_type": "image",
-                "local_image_path": str(dest),
-                "copyright": data.get("copyright", "NASA"),
-                "fetched_at": datetime.utcnow().isoformat() + "Z",
-            }
-            logger.info(f"Successfully fetched image APOD: '{result['title']}'")
-            return result
-
-        elif media_type == "video":
-            # APOD returned a video (usually YouTube embed).
-            # Try to use the thumbnail URL if available, else fall back a day.
-            thumb = data.get("thumbnail_url")
-            if thumb and attempt == 0:
-                logger.warning(
-                    f"APOD is a video today. Using provided thumbnail: {thumb}"
-                )
-                ext = _image_ext_from_url(thumb)
-                dest = output_dir / f"apod_image{ext}"
-                _download_image(thumb, dest)
-
-                result = {
-                    "date": data.get("date"),
-                    "title": data.get("title", ""),
-                    "explanation": data.get("explanation", ""),
-                    "url": data.get("url", ""),
-                    "hdurl": thumb,
-                    "media_type": "video_thumbnail",
-                    "local_image_path": str(dest),
-                    "copyright": data.get("copyright", "NASA"),
-                    "fetched_at": datetime.utcnow().isoformat() + "Z",
-                }
-                logger.info(f"Using video thumbnail for APOD: '{result['title']}'")
-                return result
-
-            # Fall back to the previous day
-            if check_date is None:
-                check_date = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
-            else:
-                prev = datetime.strptime(check_date, "%Y-%m-%d") - timedelta(days=1)
-                check_date = prev.strftime("%Y-%m-%d")
-            logger.warning(
-                f"APOD on {data.get('date')} is a video with no thumbnail. "
-                f"Trying {check_date} ..."
-            )
-
-    raise RuntimeError(
-        f"Could not find an image-based APOD within {MAX_FALLBACK_DAYS} days."
-    )
-
-
-@_make_retry()
-def fetch_neo_week(api_key: str, output_dir: Path) -> dict:
-    """
-    Fetch NASA NEO feed for the current week (7 days).
-    Returns a summary dict with the top asteroid facts.
-    """
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    end = (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d")
-    logger.info(f"Fetching NEO feed {today} → {end} ...")
-    resp = requests.get(
-        NEO_URL,
-        params={"start_date": today, "end_date": end, "api_key": api_key},
-        timeout=30,
-    )
+    """Fetch NASA APOD for space niche."""
+    params = {"api_key": api_key}
+    if date:
+        params["date"] = date
+    resp = requests.get(NASA_APOD_URL, params=params, timeout=15)
     resp.raise_for_status()
     data = resp.json()
-
-    all_neos = []
-    for date_str, neos in data.get("near_earth_objects", {}).items():
-        for neo in neos:
-            max_diam_km = neo.get("estimated_diameter", {}).get("kilometers", {}).get("estimated_diameter_max", 0)
-            miss_km = None
-            for approach in neo.get("close_approach_data", []):
-                miss_km = float(approach.get("miss_distance", {}).get("kilometers", 0))
-                break
-            all_neos.append({
-                "name": neo.get("name", "Unknown"),
-                "date": date_str,
-                "diameter_km": round(max_diam_km, 3),
-                "miss_distance_km": round(miss_km, 0) if miss_km else None,
-                "is_potentially_hazardous": neo.get("is_potentially_hazardous_asteroid", False),
-            })
-
-    # Sort by closest approach
-    all_neos.sort(key=lambda x: x.get("miss_distance_km") or float("inf"))
-
-    result = {
-        "count": data.get("element_count", 0),
-        "top_asteroid": all_neos[0] if all_neos else None,
-        "hazardous_count": sum(1 for n in all_neos if n["is_potentially_hazardous"]),
-        "all_neos": all_neos[:10],
-        "fetched_at": datetime.utcnow().isoformat() + "Z",
-        "content_type": "asteroid_watch",
-    }
-    logger.info(
-        f"NEO fetch complete: {result['count']} objects this week, "
-        f"{result['hazardous_count']} potentially hazardous."
-    )
-    return result
+    
+    img_url = data.get("hdurl") or data.get("url")
+    if img_url and data.get("media_type") == "image":
+        dest = output_dir / "apod_image.jpg"
+        with requests.get(img_url, stream=True, timeout=30) as r:
+            r.raise_for_status()
+            with open(dest, "wb") as f:
+                for chunk in r.iter_content(65536):
+                    f.write(chunk)
+        data["local_image_path"] = str(dest)
+    return data
 
 
 def save_json(data: dict, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-    logger.info(f"Saved metadata → {path}")
 
 
-# ── DRY RUN fixture ────────────────────────────────────────────────────────────
-_DRY_RUN_APOD = {
-    "date": datetime.utcnow().strftime("%Y-%m-%d"),
-    "title": "The Orion Nebula in Infrared",
-    "explanation": (
-        "The Orion Nebula is one of the most studied objects in the night sky. "
-        "Located about 1,344 light-years away, it is a stellar nursery where new "
-        "stars are forming from collapsing clouds of gas and dust. The Hubble Space "
-        "Telescope has revealed thousands of young stellar objects embedded in this "
-        "iconic cloud, making it a prime laboratory for understanding star formation."
-    ),
-    "url": "https://apod.nasa.gov/apod/image/2407/OrionNebula_Hubble_960.jpg",
-    "hdurl": "https://apod.nasa.gov/apod/image/2407/OrionNebula_Hubble_2000.jpg",
-    "media_type": "image",
-    "local_image_path": "output/apod_image.jpg",
-    "copyright": "NASA / ESA / Hubble",
-    "fetched_at": datetime.utcnow().isoformat() + "Z",
-    "dry_run": True,
-}
+_DRY_RUN_SCENES = [
+    {
+        "scene_index": 0,
+        "text": "Inside this $100 Million Mega Mansion lies a secret room hidden behind a waterfall.",
+        "keyword": "luxury mansion pool",
+        "media_path": "output/scenes/scene_0.jpg",
+        "media_type": "image"
+    },
+    {
+        "scene_index": 1,
+        "text": "The primary suite spans 3,000 square feet with 24-karat gold finishes.",
+        "keyword": "luxury penthouse bedroom",
+        "media_path": "output/scenes/scene_1.jpg",
+        "media_type": "image"
+    },
+    {
+        "scene_index": 2,
+        "text": "An underground garage houses up to twenty supercar collectibles.",
+        "keyword": "luxury garage supercar",
+        "media_path": "output/scenes/scene_2.jpg",
+        "media_type": "image"
+    },
+    {
+        "scene_index": 3,
+        "text": "Subscribe for daily luxury real estate tours and secrets!",
+        "keyword": "luxury home living room",
+        "media_path": "output/scenes/scene_3.jpg",
+        "media_type": "image"
+    }
+]
 
 
-# ── CLI ────────────────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(description="Fetch NASA APOD content for The Universe pipeline.")
-    parser.add_argument("--output", default="output", help="Output directory for image and JSON")
-    parser.add_argument("--date", default=None, help="Specific APOD date (YYYY-MM-DD)")
-    parser.add_argument("--neo", action="store_true", help="Fetch NEO asteroid data instead of APOD")
-    parser.add_argument("--dry-run", action="store_true", help="Skip real API calls; write fixture data")
+    parser = argparse.ArgumentParser(description="Fetch multi-clip visual content for Short.")
+    parser.add_argument("--script", default="output/script.json", help="Path to script.json")
+    parser.add_argument("--output", default="output", help="Output directory")
+    parser.add_argument("--dry-run", action="store_true", help="Use dry-run fixture")
     args = parser.parse_args()
 
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.dry_run:
-        logger.info("DRY RUN mode — using fixture APOD data, no real API calls.")
-        save_json(_DRY_RUN_APOD, output_dir / "apod.json")
-        print(json.dumps(_DRY_RUN_APOD, indent=2))
+        scenes_dir = output_dir / "scenes"
+        scenes_dir.mkdir(parents=True, exist_ok=True)
+        for scene in _DRY_RUN_SCENES:
+            create_fallback_scene_image(scene["text"], scene["keyword"], Path(scene["media_path"]))
+        save_json({"scenes": _DRY_RUN_SCENES}, output_dir / "scenes_meta.json")
+        print(json.dumps({"scenes": _DRY_RUN_SCENES}, indent=2))
         return
 
-    api_key = os.environ.get("NASA_API_KEY", "").strip()
-    if not api_key:
-        api_key = "DEMO_KEY"
-        logger.warning("NASA_API_KEY not set or empty — using DEMO_KEY (rate limited to 30/hour).")
-
-    if args.neo:
-        data = fetch_neo_week(api_key, output_dir)
-        save_json(data, output_dir / "neo.json")
-        print(json.dumps(data, indent=2))
+    script_path = Path(args.script)
+    if script_path.exists():
+        with open(script_path, encoding="utf-8") as f:
+            script_data = json.load(f)
     else:
-        data = fetch_apod(api_key, output_dir, date=args.date)
-        save_json(data, output_dir / "apod.json")
-        print(json.dumps(data, indent=2))
+        from src.generate_script import get_fallback_script
+        script_data = get_fallback_script("real_estate")
+
+    scenes_meta = fetch_multi_scene_content(script_data, output_dir)
+    print(json.dumps({"scenes": scenes_meta}, indent=2))
 
 
 if __name__ == "__main__":

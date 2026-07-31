@@ -1,122 +1,97 @@
 # ============================================================
-# The Universe — YouTube Shorts Pipeline Configuration
+# YouTube Shorts Pipeline Configuration — MoneyPrinterTurbo + Remotion
 # ============================================================
 # Edit these tunables to customise behavior without touching code.
-# All API keys/secrets must be set as GitHub Actions Secrets,
-# never stored here.
 
 pipeline:
-  # Output directory for intermediate and final files
   output_dir: "output"
-  # Enable dry-run mode globally (no uploads, no API writes)
   dry_run: false
-  # Max retries for external API calls
   max_retries: 5
-  # Base backoff delay in seconds for retry logic
   backoff_base: 2.0
 
-nasa:
-  # NASA APOD endpoint
-  apod_url: "https://api.nasa.gov/planetary/apod"
-  # NASA NEO Feed endpoint (for weekly Asteroid Watch content)
-  neo_url: "https://api.nasa.gov/neo/rest/v1/feed"
-  # Day of week to publish Asteroid Watch (0=Monday, 6=Sunday)
-  asteroid_watch_day: 5   # Saturday
+niche:
+  # Default niche: real_estate | space | luxury_architecture | finance_hacks
+  default: "real_estate"
+  real_estate:
+    cta: "Subscribe for daily luxury real estate tours & secrets!"
+    category_id: "24" # Entertainment / Real Estate
+    hashtag_broad: ["#shorts", "#realestate", "#luxuryhomes", "#architecture", "#mansion"]
+    hashtag_niche: ["#luxuryrealestate", "#megamansion", "#househunt", "#interiordesign", "#property"]
+  space:
+    cta: "Subscribe for daily mind-blowing space facts!"
+    category_id: "28" # Science & Technology
+    hashtag_broad: ["#space", "#nasa", "#shorts", "#science", "#universe"]
+    hashtag_niche: ["#astronomy", "#apod", "#spacefacts", "#cosmos", "#astrophotography"]
+
+stock_visuals:
+  # MoneyPrinterTurbo style visual fetching from Pexels / stock media
+  pexels_api_env: "PEXELS_API_KEY"
+  clips_per_script: 4 # Number of visual clips per Short
+  min_clip_duration: 3.0 # Minimum duration per clip in seconds
+  orientation: "portrait" # 9:16 aspect ratio search filter
 
 audio:
-  # gTTS language code
   voice_id: "en"
-  # Target narration duration in seconds
-  target_duration_min: 15
-  target_duration_max: 28
-  # Audio bitrate for MP3 output
+  voice_speed: 1.05 # Slightly faster pacing for viral engagement
   audio_bitrate: "128k"
+  bgm_enabled: true
+  bgm_volume: 0.15 # Background music ducking volume relative to speech
+  bgm_default: "assets/bgm/ambient_viral.mp3"
 
 video:
   # Output resolution (9:16 vertical for Shorts)
   width: 1080
   height: 1920
-  # Output framerate
   fps: 30
-  # Target video length in seconds (max)
   max_duration: 58
-  # Hook overlay text display duration (seconds)
   hook_duration: 2.5
-  # Caption style
+
+  # Remotion / Motion Graphics styling
+  karaoke_subtitles: true
   caption_font: "assets/fonts/Montserrat-Bold.ttf"
-  caption_font_size: 58
+  caption_font_size: 64
   caption_color: "white"
   caption_highlight_color: "yellow"
   caption_stroke_color: "black"
-  caption_stroke_width: 3
-  caption_y_position: 0.72   # Fraction from top (0.0–1.0)
+  caption_stroke_width: 5
+  caption_y_position: 0.68
+
+  # Remotion-style overlays & subscriber conversion triggers
+  subscribe_badge: true
+  subscribe_badge_path: "assets/subscribe_badge.png"
+  progress_bar: true
+  progress_bar_color: "yellow"
+
   # Logo overlay
   logo_path: "assets/logo.png"
-  logo_size: 90           # pixels
-  logo_opacity: 0.65
-  logo_position: "bottom_right"  # bottom_right | bottom_left | top_right | top_left
-  logo_margin: 28         # pixels from edge
-  # Background blur for letterbox bars (when image doesn't fill full height)
-  blur_background: true
-  blur_strength: 20
-  # Video codec settings
+  logo_size: 90
+  logo_opacity: 0.70
+  logo_position: "bottom_right"
+  logo_margin: 28
+
+  # Video rendering
   video_codec: "libx264"
   audio_codec: "aac"
   video_preset: "fast"
   crf: 23
 
 script:
-  # Word count target for narration
-  min_words: 50
-  max_words: 72
-  # Call-to-action appended to every script
-  cta: "Follow for daily space facts."
-  # Gemini model for script + comment reply generation (1.5-flash has better free tier limits)
+  min_words: 45
+  max_words: 70
   gemini_model: "gemini-2.0-flash-lite"
 
 metadata:
-  # YouTube category: 28 = Science & Technology
-  category_id: "28"
   privacy_status: "public"
   made_for_kids: false
-  contains_synthetic_media: false   # Real NASA imagery + human-scripted narration
+  contains_synthetic_media: false
   default_language: "en"
-  # Hashtag pool — mix of broad + niche
-  hashtag_pool:
-    broad:
-      - "#space"
-      - "#nasa"
-      - "#shorts"
-      - "#science"
-      - "#universe"
-    niche:
-      - "#astronomy"
-      - "#apod"
-      - "#spacefacts"
-      - "#cosmos"
-      - "#astrophotography"
-      - "#deepspace"
-      - "#nasapics"
-      - "#spacewatch"
-      - "#scienceisawesome"
-    viral:
-      - "#mindblowing"
-      - "#didyouknow"
-      - "#amazingfacts"
-      - "#todayinspace"
-  # Max hashtags in description
   max_hashtags: 6
-  # Max tags array length
   max_tags: 15
 
 comments:
-  # Hours after upload to wait before replying
   reply_delay_hours: 3
-  # Max comments to reply to per run
   max_replies_per_run: 10
-  # Minimum comment length to reply to (skip very short ones)
   min_comment_length: 15
-  # Spam keywords — skip if any present
   spam_keywords:
     - "subscribe back"
     - "sub4sub"

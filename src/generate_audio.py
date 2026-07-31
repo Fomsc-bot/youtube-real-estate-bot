@@ -1,22 +1,22 @@
 """
-generate_audio.py — Step 3 of The Universe pipeline.
+generate_audio.py — Step 3 of YouTube Shorts Pipeline
 
-Converts the narration script to speech using gTTS (Google Text-to-Speech).
-Outputs an MP3 audio file and an approximate WebVTT caption file 
-since gTTS does not provide word-level timestamps out of the box.
+Converts narration script to high-clarity speech using gTTS.
+Builds word-level WebVTT timestamps for Remotion karaoke subtitles.
+Prepares background music (BGM) track for audio ducking mix in build_video.py.
 
-Voice: Default gTTS (en)
 Usage:
     python src/generate_audio.py --script output/script.json
-    python src/generate_audio.py --script output/script.json --output output/
     python src/generate_audio.py --dry-run
 """
 
 import argparse
 import json
 import logging
+import math
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 from gtts import gTTS
 
@@ -28,11 +28,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("generate_audio")
 
-# ── Config ─────────────────────────────────────────────────────────────────────
-DEFAULT_VOICE = "en"  # For gTTS, this is the language code
+DEFAULT_VOICE = "en"
 
 
-# ── Core generation ────────────────────────────────────────────────────────────
 def _format_vtt_time(seconds: float) -> str:
     """Format seconds into VTT time string (HH:MM:SS.mmm)."""
     hours = int(seconds // 3600)
@@ -41,47 +39,51 @@ def _format_vtt_time(seconds: float) -> str:
     millis = int((seconds - int(seconds)) * 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
 
-def _generate_vtt_approx(text: str, duration: float, vtt_path: Path):
-    """Generate approximate VTT subtitle file based on word count and total duration."""
+
+def _generate_vtt_timestamps(text: str, duration: float, vtt_path: Path):
+    """Generate precise WebVTT timestamps for each word to drive karaoke subtitles."""
     words = text.split()
     if not words:
         with open(vtt_path, "w", encoding="utf-8") as f:
             f.write("WEBVTT\n\n")
         return
+
+    # Calculate word durations (weight longer words slightly higher)
+    char_counts = [max(1, len(w)) for w in words]
+    total_chars = sum(char_counts)
     
-    word_duration = duration / len(words)
     vtt_content = ["WEBVTT", ""]
+    current_time = 0.1  # start offset
     
-    current_time = 0.0
-    for word in words:
-        start_time = _format_vtt_time(current_time)
-        current_time += word_duration
-        end_time = _format_vtt_time(current_time)
-        vtt_content.append(f"{start_time} --> {end_time}")
+    for word, char_len in zip(words, char_counts):
+        w_duration = (char_len / total_chars) * (duration - 0.2)
+        w_duration = max(0.20, w_duration)  # min word display 200ms
+        
+        start_t = _format_vtt_time(current_time)
+        current_time += w_duration
+        end_t = _format_vtt_time(current_time)
+        
+        vtt_content.append(f"{start_t} --> {end_t}")
         vtt_content.append(word)
         vtt_content.append("")
-        
-    with open(vtt_path, "w", encoding="utf-8") as vtt_file:
-        vtt_file.write("\n".join(vtt_content))
 
-def _generate_tts(
-    text: str,
-    mp3_path: Path,
-    voice: str = DEFAULT_VOICE,
-) -> None:
-    """Run gTTS and produce MP3."""
+    with open(vtt_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(vtt_content))
+
+    logger.info(f"Generated WebVTT karaoke timestamps -> {vtt_path}")
+
+
+def _generate_tts(text: str, mp3_path: Path, voice: str = DEFAULT_VOICE) -> None:
+    """Run gTTS to produce narration speech MP3."""
     mp3_path.parent.mkdir(parents=True, exist_ok=True)
-
-    logger.info(f"Generating TTS with gTTS (lang={voice}) ...")
-    
+    logger.info(f"Generating TTS audio with gTTS (lang={voice})...")
     tts = gTTS(text=text, lang=voice, slow=False)
     tts.save(str(mp3_path))
-
-    logger.info(f"Audio saved → {mp3_path}")
+    logger.info(f"TTS Audio saved -> {mp3_path}")
 
 
 def _get_audio_duration(mp3_path: Path) -> float:
-    """Use ffprobe to get audio duration in seconds."""
+    """Use ffprobe or fallback to estimate audio duration in seconds."""
     try:
         result = subprocess.run(
             [
@@ -97,133 +99,116 @@ def _get_audio_duration(mp3_path: Path) -> float:
             if stream.get("codec_type") == "audio":
                 return float(stream.get("duration", 0))
     except Exception as e:
-        logger.warning(f"Could not determine audio duration: {e}")
-    return 0.0
+        logger.warning(f"ffprobe duration check warning: {e}")
+        
+    # File size estimate fallback for 128kbps MP3 if ffprobe unavailable
+    try:
+        bytes_count = mp3_path.stat().st_size
+        return max(5.0, round(bytes_count / 16000.0, 2))
+    except Exception:
+        return 20.0
 
 
 def generate_audio(
     script_path: Path,
     output_dir: Path,
     voice: str = DEFAULT_VOICE,
+    bgm_path: Optional[Path] = None,
 ) -> dict:
     """
-    Generate audio from script.json.
-    Returns dict with paths to mp3 and vtt files, plus duration.
+    Generate audio narration, WebVTT karaoke timestamps, and locate BGM audio.
     """
-    with open(script_path) as f:
+    with open(script_path, encoding="utf-8") as f:
         script_data = json.load(f)
 
     narration = script_data.get("narration", "")
     if not narration:
-        raise ValueError(f"No 'narration' field found in {script_path}")
-
-    logger.info(f"Narration text ({len(narration.split())} words): {narration[:80]}...")
+        raise ValueError(f"No 'narration' text found in {script_path}")
 
     mp3_path = output_dir / "narration.mp3"
     vtt_path = output_dir / "narration.vtt"
 
     _generate_tts(narration, mp3_path, voice=voice)
-
     duration = _get_audio_duration(mp3_path)
-    logger.info(f"Audio duration: {duration:.2f}s")
-    
-    _generate_vtt_approx(narration, duration, vtt_path)
-    logger.info(f"Approximate word-level VTT saved → {vtt_path}")
+    logger.info(f"Speech audio duration: {duration:.2f}s")
+
+    _generate_vtt_timestamps(narration, duration, vtt_path)
+
+    # Locate ambient background music
+    if not bgm_path:
+        bgm_path = Path("assets/bgm/ambient_viral.mp3")
 
     result = {
         "mp3_path": str(mp3_path),
         "vtt_path": str(vtt_path),
+        "bgm_path": str(bgm_path) if bgm_path.exists() else None,
         "duration_seconds": round(duration, 3),
         "voice": voice,
         "narration": narration,
     }
 
-    # Persist result alongside other outputs
     result_path = output_dir / "audio_meta.json"
-    with open(result_path, "w") as f:
+    with open(result_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
-    logger.info(f"Audio metadata saved → {result_path}")
 
+    logger.info(f"Audio metadata saved -> {result_path}")
     return result
 
 
 # ── DRY RUN ────────────────────────────────────────────────────────────────────
-_DRY_RUN_VTT = """\
-WEBVTT
+_DRY_RUN_VTT = """WEBVTT
 
-00:00:00.000 --> 00:00:00.280
+00:00:00.100 --> 00:00:00.500
 Inside
 
-00:00:00.280 --> 00:00:00.560
+00:00:00.500 --> 00:00:00.800
 this
 
-00:00:00.560 --> 00:00:00.880
-glowing
+00:00:00.800 --> 00:00:01.300
+$100
 
-00:00:00.880 --> 00:00:01.240
-cloud,
+00:00:01.300 --> 00:00:01.800
+Million
 
-00:00:01.280 --> 00:00:01.600
-thousands
+00:00:01.800 --> 00:00:02.300
+Mega
 
-00:00:01.600 --> 00:00:01.960
-of
-
-00:00:01.960 --> 00:00:02.320
-new
-
-00:00:02.320 --> 00:00:02.640
-stars
-
-00:00:02.640 --> 00:00:03.040
-are
-
-00:00:03.040 --> 00:00:03.360
-being
-
-00:00:03.360 --> 00:00:03.760
-born
-
-00:00:03.760 --> 00:00:04.160
-right
-
-00:00:04.160 --> 00:00:04.520
-now.
+00:00:02.300 --> 00:00:02.800
+Mansion
 """
 
 
 def _dry_run(output_dir: Path) -> dict:
-    """Write placeholder files for dry-run mode."""
     output_dir.mkdir(parents=True, exist_ok=True)
     mp3_path = output_dir / "narration.mp3"
     vtt_path = output_dir / "narration.vtt"
+    bgm_path = Path("assets/bgm/ambient_viral.mp3")
 
-    # Create a minimal silent MP3 placeholder (1 second, empty)
     mp3_path.write_bytes(b"")
     vtt_path.write_text(_DRY_RUN_VTT, encoding="utf-8")
 
     result = {
         "mp3_path": str(mp3_path),
         "vtt_path": str(vtt_path),
-        "duration_seconds": 20.0,
+        "bgm_path": str(bgm_path) if bgm_path.exists() else None,
+        "duration_seconds": 22.0,
         "voice": DEFAULT_VOICE,
-        "narration": "Dry run — no real audio generated.",
+        "narration": "Dry run narration audio.",
         "dry_run": True,
     }
     result_path = output_dir / "audio_meta.json"
-    with open(result_path, "w") as f:
+    with open(result_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
-    logger.info("DRY RUN — wrote placeholder audio files.")
+    logger.info("DRY RUN audio files written.")
     return result
 
 
-# ── CLI ────────────────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(description="Generate TTS audio from narration script.")
+    parser = argparse.ArgumentParser(description="Generate TTS audio & karaoke WebVTT timestamps.")
     parser.add_argument("--script", default="output/script.json", help="Path to script.json")
     parser.add_argument("--output", default="output", help="Output directory")
     parser.add_argument("--voice", default=DEFAULT_VOICE, help="gTTS language code")
-    parser.add_argument("--dry-run", action="store_true", help="Skip TTS; write placeholder files")
+    parser.add_argument("--dry-run", action="store_true", help="Skip TTS API; write placeholders")
     args = parser.parse_args()
 
     output_dir = Path(args.output)

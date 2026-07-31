@@ -1,250 +1,107 @@
-# 🌌 The Universe — Automated YouTube Shorts Pipeline
+# 🚀 Viral YouTube Shorts Pipeline (MoneyPrinterTurbo + Remotion Architecture)
 
-> **A fully automated NASA/Space Shorts channel hosted entirely on GitHub Actions.**
-> Uploads a new 15–30 second space fact Short every day using real NASA imagery,
-> Gemini AI narration scripts, gTTS voiceover, and FFmpeg video assembly.
+> **Fully automated viral YouTube Shorts generation & publishing bot built for maximum view retention and subscriber conversion.**
 
----
-
-## 📡 What It Does
-
-| Day | Content | Source |
-|-----|---------|--------|
-| Mon–Fri & Sun | **"Today in Space"** — NASA Astronomy Picture of the Day | [NASA APOD API](https://api.nasa.gov/) |
-| Saturday | **"Asteroid Watch"** — closest NEO passing Earth this week | [NASA NEO API](https://api.nasa.gov/) |
-
-**Pipeline steps (in order):**
-1. `fetch_content.py` — Download APOD image + metadata from NASA
-2. `generate_script.py` — Generate 50–72 word narration via Google Gemini
-3. `generate_audio.py` — TTS voiceover via `gTTS` + approximate word timestamps
-4. `build_video.py` — FFmpeg: 9:16 crop, animated captions, logo overlay, hook text
-5. `generate_metadata.py` — SEO title, description, hashtags, tags
-6. `upload_video.py` — YouTube Data API v3 upload with resumable chunks
-7. `reply_comments.py` — Auto-reply to new comments using Gemini (runs 3h later)
+Inspired by **[MoneyPrinterTurbo](https://github.com/harry0703/MoneyPrinterTurbo.git)** (viral psychological hooks, sentence-by-sentence stock video alignment, audio ducking BGM) and **[Remotion](https://github.com/remotion-dev/remotion.git)** (dynamic word-by-word karaoke captions, animated subscribe overlays, video progress bars).
 
 ---
 
-## 🔑 Required API Keys & Secrets
+## 🌟 Key Features
 
-You need **4 secrets** in your GitHub repository:
+- 🎯 **Viral Hook Script Engine (MoneyPrinterTurbo)**: First 3 seconds pattern interrupt & curiosity gap powered by Gemini AI.
+- 🎬 **Multi-Clip Visual Fetching (Pexels API)**: Sentence-by-sentence keyword extraction automatically downloads matching 9:16 vertical HD stock video clips.
+- 🎨 **Remotion Motion Graphics Compositor**:
+  - **Dynamic Word-by-Word Karaoke Subtitles**: Active word highlighting in neon yellow with bold outlines.
+  - **Animated SUBSCRIBE Conversion Badge**: Displays a call-to-action badge pop-up during the video ending to drive subscriber growth.
+  - **Top Progress Bar Overlay**: Visual duration indicator keeping viewers watching until the end (maximizes Average View Duration).
+- 🎵 **Background Music (BGM) & Audio Ducking**: Smooth blend of speech narration with ambient background audio loops.
+- 📌 **Viral YouTube SEO & Subscriber Pinned Comment**: Generates high-CTR curiosity titles, targeted hashtag stacks, and pinned comment prompts to boost engagement.
+- 🏠 **Multi-Niche Flexibility**: Supports **Real Estate & Luxury Mansions** (`real_estate`) and **Space Facts & NASA APOD** (`space`).
 
-### 1. `NASA_API_KEY` (Free)
-- Register instantly at **https://api.nasa.gov/**
-- Click **"Generate API Key"**
-- You'll receive the key by email within seconds
-- Without it, the pipeline falls back to `DEMO_KEY` (30 requests/hour — usually enough)
-- Add to GitHub: Repo → Settings → Secrets → `NASA_API_KEY`
+---
 
-### 2. `GEMINI_API_KEY`
-- Get it from **https://aistudio.google.com/app/apikey**
-- Free tier: 1,500 requests/day — more than enough for 1 video/day
-- Add to GitHub: `GEMINI_API_KEY`
+## 📡 Pipeline Architecture
 
-### 3. `YOUTUBE_CREDENTIALS_JSON` (OAuth2 — already configured)
-This secret holds your YouTube OAuth2 credentials as a base64-encoded JSON string.
-It was migrated from the previous pipeline. Format:
-```json
-{
-  "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
-  "client_secret": "YOUR_CLIENT_SECRET",
-  "refresh_token": "YOUR_REFRESH_TOKEN",
-  "token_uri": "https://oauth2.googleapis.com/token"
-}
 ```
-If you need to regenerate it, see the **[Re-generating OAuth2 Credentials](#re-generating-oauth2-credentials)** section below.
+1. src/generate_script.py   -> Gemini AI viral script (Hook + Sentence Keywords + CTA)
+2. src/fetch_content.py     -> MoneyPrinterTurbo multi-clip Pexels HD stock video fetcher
+3. src/generate_audio.py    -> gTTS voiceover + WebVTT karaoke timestamps + Ambient BGM
+4. src/build_video.py       -> Remotion video compositor (karaoke text, subscribe badge, progress bar)
+5. src/generate_metadata.py -> High-CTR Title, Hashtags, and Pinned Comment
+6. src/upload_video.py      -> YouTube Data API v3 upload + auto-pinned comment
+```
 
 ---
 
-## 🚀 Setup
+## 🔑 Required & Optional API Keys
 
-### Step 1 — Clone & configure
+Add these to your **GitHub Repository Secrets** or local `.env` file:
+
+| Secret Name | Required? | Description |
+|-------------|-----------|-------------|
+| `GEMINI_API_KEY` | **Required** | Script generation & viral hook creation ([Get API Key](https://aistudio.google.com/app/apikey)) |
+| `YOUTUBE_CREDENTIALS_JSON` | **Required** | YouTube OAuth2 credentials JSON for automated channel uploads |
+| `PEXELS_API_KEY` | *Optional* | Fetch HD real estate / topic stock videos per sentence ([Get Free API Key](https://www.pexels.com/api/)). If omitted, procedural high-res visual cards are generated automatically. |
+| `NASA_API_KEY` | *Optional* | NASA APOD data for Space niche |
+
+---
+
+## 🚀 Running & Testing
+
+### Local Dry-Run (No API usage or uploads)
 ```bash
-git clone https://github.com/Fomsc-bot/youtube-real-estate-bot.git
-cd youtube-real-estate-bot
-cp .env.example .env
-# Edit .env with your local API keys for testing
+python main.py --dry-run
 ```
 
-### Step 2 — Install dependencies (local testing)
+### Run for Real Estate Niche (Default)
 ```bash
-pip install -r requirements.txt
-# Also install FFmpeg:
-# Windows: winget install ffmpeg  OR  choco install ffmpeg
-# Ubuntu:  sudo apt-get install ffmpeg
-# macOS:   brew install ffmpeg
+python main.py --niche real_estate
 ```
 
-### Step 3 — Add GitHub Secrets
-Go to your repo on GitHub → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
-
-| Secret Name | Value |
-|-------------|-------|
-| `NASA_API_KEY` | Your NASA API key |
-| `GEMINI_API_KEY` | Your Gemini API key |
-| `YOUTUBE_CREDENTIALS_JSON` | Base64-encoded credentials JSON (see above) |
-
-### Step 4 — Add your channel logo
-Replace `assets/logo.png` with your actual channel logo (PNG with transparency, any size — it'll be resized to 90×90px).
-
-### Step 5 — Push and test
+### Run for Space Niche
 ```bash
-git add .
-git commit -m "feat: The Universe pipeline setup"
-git push origin main
+python main.py --niche space
 ```
-Then go to **GitHub Actions** → **🌌 The Universe — Daily Shorts Upload** → **Run workflow** → set **"Dry run"** to `true` first to verify everything works without uploading.
 
----
-
-## 🧪 Running Locally (Testing Each Step)
-
-Each module is independently runnable via CLI:
-
+### Test Individual Pipeline Modules
 ```bash
-# Step 1: Fetch today's APOD
-python src/fetch_content.py --output output/
-
-# Step 2: Generate narration script
-python src/generate_script.py --apod output/apod.json --output output/script.json
-
-# Step 3: Generate TTS audio
-python src/generate_audio.py --script output/script.json --output output/
-
-# Step 4: Build video
-python src/build_video.py \
-  --image output/apod_image.jpg \
-  --audio output/narration.mp3 \
-  --vtt output/narration.vtt \
-  --script output/script.json \
-  --output output/final_video.mp4
-
-# Step 5: Generate metadata
-python src/generate_metadata.py --apod output/apod.json --script output/script.json
-
-# Step 6: Upload (add --dry-run to skip actual upload)
-python src/upload_video.py --video output/final_video.mp4 --metadata output/metadata.json --dry-run
-
-# Run the full pipeline locally
-python main.py --dry-run   # No API calls, uses fixture data
-python main.py             # Full real run
-python main.py --neo       # Force Asteroid Watch mode
-python main.py --date 2024-07-04  # Use specific APOD date
+python src/generate_script.py --niche real_estate --dry-run
+python src/fetch_content.py --dry-run
+python src/generate_audio.py --dry-run
+python src/build_video.py --dry-run
+python src/generate_metadata.py --dry-run
 ```
-
----
-
-## ⏰ Schedule
-
-| Workflow | Cron | UTC Time | IST Time |
-|----------|------|----------|----------|
-| Daily Upload | `0 14 * * *` | 2:00 PM | 7:30 PM |
-| Comment Replies | `0 17 * * *` | 5:00 PM | 10:30 PM |
-
-To change the posting time, edit `cron` in `.github/workflows/daily_upload.yml`.
 
 ---
 
 ## ⚙️ Configuration (`config.yaml`)
 
-Key tunables — no code changes needed:
+Edit `config.yaml` to customize video styling, karaoke fonts, colors, and background music without code changes:
 
 ```yaml
+niche:
+  default: "real_estate"
+
+stock_visuals:
+  pexels_api_env: "PEXELS_API_KEY"
+  clips_per_script: 4
+
 audio:
-  voice_id: "en-US-AriaNeural"   # Change voice here
+  bgm_enabled: true
+  bgm_volume: 0.15
 
 video:
-  caption_font_size: 58          # Caption text size
-  logo_opacity: 0.65             # Logo transparency
-
-metadata:
-  hashtag_pool:
-    broad: ["#space", "#nasa", "#shorts"]
-    niche: ["#apod", "#astronomy", "#cosmos"]
+  karaoke_subtitles: true
+  caption_highlight_color: "yellow"
+  subscribe_badge: true
+  progress_bar: true
 ```
 
 ---
 
-## 🔄 Re-generating OAuth2 Credentials
+## 📊 Summary of Enhancements for Views & Subscriber Growth
 
-If your refresh token expires:
-
-1. Go to **Google Cloud Console** → APIs & Services → Credentials
-2. Ensure YouTube Data API v3 is enabled
-3. Download your OAuth2 client secrets JSON ("Desktop app" type)
-4. Run the helper locally:
-   ```bash
-   python src/setup_oauth.py --client-secrets /path/to/client_secrets.json
-   ```
-5. A browser window opens — log in as the channel owner
-6. Copy the base64 string output and update the `YOUTUBE_CREDENTIALS_JSON` secret
-
----
-
-## 📁 Repository Structure
-
-```
-.
-├── .github/
-│   └── workflows/
-│       ├── daily_upload.yml      # Main pipeline (runs daily at 2PM UTC)
-│       └── reply_comments.yml    # Comment reply (runs 3h after upload)
-├── assets/
-│   ├── logo.png                  # Channel logo (replace with your own)
-│   └── fonts/
-│       └── Montserrat-Bold.ttf   # Caption font (auto-downloaded in CI)
-├── src/
-│   ├── fetch_content.py          # Step 1: NASA APOD/NEO API
-│   ├── generate_script.py        # Step 2: Gemini script generation
-│   ├── generate_audio.py         # Step 3: gTTS voiceover
-│   ├── build_video.py            # Step 4: FFmpeg video assembly
-│   ├── generate_metadata.py      # Step 5: YouTube metadata
-│   ├── upload_video.py           # Step 6: YouTube Data API upload
-│   ├── reply_comments.py         # Step 7: Auto comment replies
-│   └── setup_oauth.py            # One-time OAuth2 helper
-├── output/                       # Generated files (gitignored)
-├── config.yaml                   # All tunables
-├── main.py                       # Pipeline orchestrator
-├── requirements.txt
-├── .env.example
-└── README.md
-```
-
----
-
-## 🛡️ Content Integrity Guarantees
-
-- **No AI-generated visuals** — only real NASA APOD imagery
-- **No fabricated facts** — Gemini is strictly instructed to use only APOD-provided text
-- **`containsSyntheticMedia: false`** — correctly disclosed since all imagery is real NASA content
-- **`selfDeclaredMadeForKids: false`** — space education for general audiences
-
----
-
-## 🐛 Troubleshooting
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `DEMO_KEY rate limit` | No NASA_API_KEY | Register at api.nasa.gov (free) |
-| `GEMINI_API_KEY not set` | Missing secret | Add `GEMINI_API_KEY` to GitHub Secrets |
-| `YouTube quota exceeded (403)` | 10,000 units/day limit hit | Wait 24h; uploads cost ~1,600 units each |
-| `FFmpeg filter error` | APOD returned unusual image | Run `--dry-run` to isolate; check `output/` artifacts |
-| `Refresh token invalid` | OAuth2 expired | Re-run `setup_oauth.py` locally |
-| `APOD returned a video` | NASA published a video today | Pipeline auto-falls-back to yesterday's image |
-
----
-
-## 📊 Estimated API Costs
-
-| Service | Usage | Cost |
-|---------|-------|------|
-| NASA APOD | 1 req/day | Free |
-| Google Gemini | ~2 calls/day | Free tier (1,500 req/day) |
-| gTTS | Unlimited | Free (Google Text-to-Speech) |
-| YouTube Data API | ~1,600 units/day | Free (10,000 unit quota) |
-| GitHub Actions | ~5–10 min/day | Free (2,000 min/month for public repos) |
-
-**Total cost: $0/month** with free tiers.
-
----
-
-*Built for [The Universe](https://youtube.com) channel. Real NASA imagery. Real science.*
+1. **3-Second Hook Rule**: Swiping away stops instantly due to high-curiosity verbal/visual pattern interrupts.
+2. **Multi-Clip Dynamic Motion**: Scene changes every 3 seconds keep retention graphs high.
+3. **Word-by-Word Karaoke Captions**: Viewers read along with high visual impact, increasing watch time.
+4. **Subscribe Conversion Overlay & Pinned Comment**: Drives casual viewers into subscribers.

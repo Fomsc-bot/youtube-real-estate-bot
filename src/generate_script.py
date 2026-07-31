@@ -1,13 +1,18 @@
 """
-generate_script.py — Step 2 of The Universe pipeline.
+generate_script.py — MoneyPrinterTurbo-style Viral Script Generator
 
-Uses Google Gemini API to turn NASA APOD explanation text into a punchy
-15–25 second narration script (50–72 words) optimised for TTS pacing
-and YouTube Shorts virality.
+Uses Google Gemini AI to turn real estate or space topics into viral short-form
+narration scripts (45–70 words).
+
+Key features (MoneyPrinterTurbo Architecture):
+  1. 3-Second Psychological Hook (visual & verbal pattern interrupt)
+  2. Micro-cliffhangers and punchy pacing
+  3. High-converting subscriber CTA ("Subscribe for daily luxury tours!")
+  4. Sentence-by-sentence visual keyword extraction for Pexels stock video alignment
 
 Usage:
-    python src/generate_script.py --apod output/apod.json
-    python src/generate_script.py --apod output/apod.json --dry-run
+    python src/generate_script.py --niche real_estate
+    python src/generate_script.py --niche space --dry-run
 """
 
 import argparse
@@ -16,18 +21,35 @@ import logging
 import os
 import re
 import sys
-import time
 from pathlib import Path
 from typing import Optional
 
-import google.generativeai as genai
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-    before_sleep_log,
-)
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
+try:
+    from tenacity import (
+        retry,
+        retry_if_exception_type,
+        stop_after_attempt,
+        wait_exponential,
+        before_sleep_log,
+    )
+    def _make_retry():
+        return retry(
+            retry=retry_if_exception_type(Exception),
+            stop=stop_after_attempt(5),
+            wait=wait_exponential(multiplier=1, min=2, max=30),
+            before_sleep=before_sleep_log(logger, logging.WARNING),
+            reraise=True,
+        )
+except ImportError:
+    def _make_retry():
+        def decorator(func):
+            return func
+        return decorator
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -37,333 +59,258 @@ logging.basicConfig(
 )
 logger = logging.getLogger("generate_script")
 
-# ── System prompt ──────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """You are a science short-form content writer for the YouTube Shorts channel 'The Universe'.
+# ── System Prompts ─────────────────────────────────────────────────────────────
+REAL_ESTATE_SYSTEM_PROMPT = """You are a viral YouTube Shorts scriptwriter for a top-tier Real Estate & Luxury Architecture channel.
 
-Your job is to turn a NASA Astronomy Picture of the Day (APOD) explanation into a narration script for a 15–25 second YouTube Short.
-
-HARD RULES:
-1. Total word count: 50–72 words ONLY. Count carefully.
-2. First sentence must be a hook — state the most surprising fact immediately. No "hello", no "today we're looking at", no throat-clearing.
-3. Use only facts that are explicitly present in the provided APOD explanation. Do NOT invent or extrapolate figures.
-4. Short punchy sentences. Maximum 12 words per sentence. Suited for TTS pacing.
-5. Final sentence must be exactly: "Follow for daily space facts."
-6. No clickbait that isn't paid off by the script. No exaggeration.
-7. Write for spoken audio — avoid punctuation that sounds wrong aloud (em dashes, semicolons). Commas and periods only.
-8. Do NOT include stage directions, speaker labels, or formatting — plain narration text only.
-
-Also output (separately, not in the narration):
-- HOOK_TEXT: A 3–5 word bold title for the video overlay (first 2 seconds). Make it intriguing. Example: "Star Factory Revealed" or "1,000 Light-Years Away"
-- TITLE_KEYWORD: The single most searchable keyword from this content (e.g. "Orion Nebula", "Black Hole", "Saturn")
-"""
-
-USER_PROMPT_TEMPLATE = """APOD Title: {title}
-
-APOD Explanation (source text — use ONLY facts from this):
-{explanation}
-
-Now write the narration script and the HOOK_TEXT and TITLE_KEYWORD.
-
-Respond in this exact JSON format (no markdown fences):
-{{
-  "narration": "<50-72 word script ending with 'Follow for daily space facts.'>",
-  "hook_text": "<3-5 word overlay title>",
-  "title_keyword": "<single most searchable keyword>"
-}}"""
-
-NEO_SYSTEM_PROMPT = """You are a science short-form content writer for the YouTube Shorts channel 'The Universe'.
-
-Write a narration script for an 'Asteroid Watch' weekly Short (15–25 seconds).
+Your goal is to write a high-retention 15–30 second YouTube Short script about real estate / luxury property / architectural marvels / home buying secrets.
 
 HARD RULES:
-1. Total word count: 50–72 words ONLY.
-2. Open with the most alarming but honest fact about the closest asteroid this week.
-3. Use ONLY the data provided — no invention.
-4. Short punchy sentences, max 12 words each.
-5. Final sentence must be exactly: "Follow for daily space facts."
-6. No exaggeration. Hazardous does NOT mean it will hit Earth — say it correctly.
-7. Plain narration text only.
+1. Total word count: 45–68 words ONLY.
+2. Sentence 1 MUST be an irresistible viral hook (pattern interrupt / curiosity gap). Example: "Do NOT buy a mansion until you check this legal loophole..." or "Inside this $120 Million Mega Mansion lies a secret room..."
+3. Short, high-energy sentences (max 10-12 words per sentence).
+4. Final sentence MUST be a high-conversion subscriber CTA: "Subscribe for daily luxury real estate tours and secrets!"
+5. For EVERY sentence in the narration, provide 2-3 visual search keywords suitable for Pexels HD stock video search (e.g., ["luxury mansion pool", "modern villa exterior"]).
+
+Output MUST be in raw JSON (no markdown fences):
+{
+  "hook_text": "<3-5 word intriguing video overlay title>",
+  "narration": "<complete narration text>",
+  "sentences": [
+    {
+      "text": "<sentence 1 text>",
+      "keywords": ["<keyword1>", "<keyword2>"]
+    }
+  ],
+  "title_keyword": "<main search keyword for video title>"
+}
 """
 
-NEO_USER_PROMPT_TEMPLATE = """Asteroid Watch data for this week:
-- Total near-Earth objects: {count}
-- Closest approach: {name}, passing {miss_km:,} km away on {date}
-- Estimated diameter: {diameter} km
-- Potentially hazardous: {hazardous}
-- Total hazardous objects this week: {hazardous_count}
+SPACE_SYSTEM_PROMPT = """You are a viral YouTube Shorts scriptwriter for a science & space channel.
 
-Respond in this exact JSON format (no markdown fences):
-{{
-  "narration": "<50-72 word script ending with 'Follow for daily space facts.'>",
-  "hook_text": "<3-5 word overlay title, e.g. 'Asteroid Close Call'>",
-  "title_keyword": "Asteroid Watch"
-}}"""
+Write a punchy, mind-blowing 15–30 second script about space / astronomy.
 
+HARD RULES:
+1. Total word count: 45–68 words ONLY.
+2. Sentence 1 MUST be a viral hook stating the most surprising space fact immediately.
+3. Short, punchy sentences.
+4. Final sentence MUST be: "Subscribe for daily mind-blowing space facts!"
+5. Provide visual search keywords for Pexels HD video search for each sentence.
 
-# ── Retry decorator ────────────────────────────────────────────────────────────
-def _make_retry():
-    return retry(
-        retry=retry_if_exception_type(Exception),   # MUST be keyword arg
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=1, min=3, max=45),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-        reraise=True,
-    )
+Output MUST be in raw JSON (no markdown fences):
+{
+  "hook_text": "<3-5 word intriguing overlay title>",
+  "narration": "<complete narration text>",
+  "sentences": [
+    {
+      "text": "<sentence 1 text>",
+      "keywords": ["<keyword1>", "<keyword2>"]
+    }
+  ],
+  "title_keyword": "<main keyword>"
+}
+"""
 
 
 def _init_gemini() -> None:
-    """Initialise the Gemini SDK with the API key from environment."""
+    if genai is None:
+        raise EnvironmentError("google-generativeai module not installed.")
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise EnvironmentError(
-            "GEMINI_API_KEY environment variable is not set. "
-            "Add it as a GitHub Secret or set it locally."
-        )
+        raise EnvironmentError("GEMINI_API_KEY environment variable is not set.")
     genai.configure(api_key=api_key)
 
 
 @_make_retry()
 def _call_gemini(model_name: str, system_prompt: str, user_prompt: str) -> str:
-    """Make a Gemini API call and return raw text response."""
-    try:
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            system_instruction=system_prompt,
-        )
-        logger.info(f"Calling Gemini model: {model_name} ...")
-        response = model.generate_content(
-            user_prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.7,
-                max_output_tokens=512,
-                response_mime_type="application/json",
-            ),
-            safety_settings={
-                genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-            },
-            request_options={"timeout": 30},   # 30-second hard timeout
-        )
-        text = response.text.strip()
-        logger.info(f"Gemini response received ({len(text)} chars)")
-        return text
-    except Exception as e:
-        # Check if it's a 429 quota error
-        if "429" in str(e) or "404" in str(e):
-            logger.warning(f"Hit 429/404 Error on {model_name}. Attempting fallback...")
-            fallback_model = "gemini-2.0-flash" if "lite" in model_name else "gemini-2.0-flash-lite"
-            logger.info(f"Calling fallback Gemini model: {fallback_model} ...")
-            model = genai.GenerativeModel(
-                model_name=fallback_model,
-                system_instruction=system_prompt,
-            )
-            response = model.generate_content(
-                user_prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.7,
-                    max_output_tokens=512,
-                    response_mime_type="application/json",
-                ),
-                safety_settings={
-                    genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                    genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                    genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                    genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                },
-                request_options={"timeout": 30},
-            )
-            text = response.text.strip()
-            logger.info(f"Fallback Gemini response received ({len(text)} chars)")
-            return text
-        # Reraise if not 429 or fallback also fails
-        raise
+    model = genai.GenerativeModel(
+        model_name=model_name,
+        system_instruction=system_prompt,
+    )
+    logger.info(f"Calling Gemini model: {model_name} ...")
+    response = model.generate_content(
+        user_prompt,
+        generation_config=genai.types.GenerationConfig(
+            temperature=0.7,
+            max_output_tokens=512,
+            response_mime_type="application/json",
+        ),
+        request_options={"timeout": 30},
+    )
+    return response.text.strip()
 
 
 def _parse_json_response(raw: str) -> dict:
-    """Extract JSON from Gemini response — handles markdown fences if present."""
-    # Strip markdown fences if Gemini added them despite instructions
     raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.MULTILINE)
-    raw = re.sub(r"\s*```$", "", raw, flags=re.MULTILINE)
-    raw = raw.strip()
+    raw = re.sub(r"\s*```$", "", raw, flags=re.MULTILINE).strip()
     try:
         return json.loads(raw)
-    except json.decoder.JSONDecodeError as e:
-        logger.error(f"JSONDecodeError: {e}")
-        logger.error(f"Raw response was:\n{raw}")
-        # Fallback to standard regex parsing if JSON fails entirely
-        import re
-        narration_match = re.search(r'"narration"\s*:\s*"([^"]+)"', raw)
-        hook_match = re.search(r'"hook_text"\s*:\s*"([^"]+)"', raw)
-        keyword_match = re.search(r'"title_keyword"\s*:\s*"([^"]+)"', raw)
-        return {
-            "narration": narration_match.group(1) if narration_match else "Space is full of incredible mysteries. Today we look at an amazing discovery in the cosmos. Follow for daily space facts.",
-            "hook_text": hook_match.group(1) if hook_match else "Space Discovery",
-            "title_keyword": keyword_match.group(1) if keyword_match else "Space",
-        }
+    except Exception as e:
+        logger.error(f"Failed to parse Gemini response as JSON: {e}")
+        return {}
 
 
-def _word_count(text: str) -> int:
-    return len(text.split())
-
-
-def generate_apod_script(apod_data: dict, model_name: str = "gemini-2.0-flash-lite") -> dict:
-    """
-    Generate narration script from APOD metadata using Gemini.
-    Returns dict with narration, hook_text, title_keyword, word_count.
-    """
-    _init_gemini()
-
-    user_prompt = USER_PROMPT_TEMPLATE.format(
-        title=apod_data["title"],
-        explanation=apod_data["explanation"][:2000],  # Truncate to avoid token waste
-    )
+def generate_viral_script(
+    niche: str = "real_estate",
+    topic: Optional[str] = None,
+    model_name: str = "gemini-2.0-flash-lite",
+    source_content: Optional[dict] = None,
+) -> dict:
+    """Generate MoneyPrinterTurbo viral script for real_estate or space."""
+    if niche == "space" and source_content:
+        title = source_content.get("title", "Space Discovery")
+        explanation = source_content.get("explanation", "")
+        user_prompt = f"Topic: {title}\nExplanation: {explanation[:1500]}\nGenerate viral script with keywords."
+        system_prompt = SPACE_SYSTEM_PROMPT
+    elif niche == "real_estate":
+        topic_str = topic or "5 Secrets of $100 Million Mega Mansions"
+        user_prompt = f"Write a viral YouTube Short script about real estate topic: '{topic_str}'."
+        system_prompt = REAL_ESTATE_SYSTEM_PROMPT
+    else:
+        topic_str = topic or "Mind-blowing Cosmic Discoveries"
+        user_prompt = f"Write a viral YouTube Short script about topic: '{topic_str}'."
+        system_prompt = SPACE_SYSTEM_PROMPT
 
     try:
-        raw = _call_gemini(model_name, SYSTEM_PROMPT, user_prompt)
+        _init_gemini()
+        raw = _call_gemini(model_name, system_prompt, user_prompt)
         parsed = _parse_json_response(raw)
 
-        narration = parsed.get("narration", "").strip()
-        wc = _word_count(narration)
-        logger.info(f"Generated script: {wc} words")
+        if parsed and "narration" in parsed:
+            narration = parsed["narration"].strip()
+            words = narration.split()
+            parsed["word_count"] = len(words)
+            parsed["niche"] = niche
+            logger.info(f"Generated viral script ({len(words)} words): {narration[:60]}...")
+            return parsed
 
-        if wc < 40 or wc > 80:
-            logger.warning(f"Word count {wc} is outside target range 50-72. Proceeding anyway.")
-
-        return {
-            "narration": narration,
-            "hook_text": parsed.get("hook_text", apod_data["title"][:30]),
-            "title_keyword": parsed.get("title_keyword", "Space"),
-            "word_count": wc,
-            "apod_title": apod_data["title"],
-            "apod_date": apod_data.get("date", ""),
-            "content_type": "apod",
-        }
     except Exception as e:
-        logger.error(f"Gemini generation failed completely: {e}")
-        logger.warning("Falling back to local extraction from NASA data (No AI used).")
-        
-        title = apod_data.get("title", "Space Discovery")
-        explanation = apod_data.get("explanation", "Space is full of incredible mysteries.")
-        
-        # Extract first 2 sentences for a short narration
-        import configparser # just to import something safely if needed, but not required
-        sentences = [s.strip() for s in explanation.split(".") if s.strip()]
-        narration = ". ".join(sentences[:2]) + "." if sentences else explanation
-        
-        # We don't have access to the global `config` easily here without loading it, so hardcode cta
-        cta = "Follow for daily space facts."
-        narration = f"{title}. {narration} {cta}"
-        
-        wc = _word_count(narration)
-        
+        logger.warning(f"Gemini API generation unavailable ({e}). Using offline viral script generator.")
+
+    return get_fallback_script(niche, topic)
+
+
+def get_fallback_script(niche: str = "real_estate", topic: Optional[str] = None) -> dict:
+    """Offline high-converting script template when AI API is unconfigured/offline."""
+    if niche == "real_estate":
         return {
-            "narration": narration,
-            "hook_text": title[:30] if len(title) > 30 else title,
-            "title_keyword": title.split()[0] if title else "Space",
-            "word_count": wc,
-            "apod_title": title,
-            "apod_date": apod_data.get("date", ""),
-            "content_type": "apod",
+            "hook_text": "Inside $100M Mega Mansion",
+            "narration": (
+                "Inside this $100 Million Mega Mansion lies a secret room hidden behind a waterfall. "
+                "The primary suite spans 3,000 square feet with 24-karat gold finishes. "
+                "An underground garage houses up to twenty supercar collectibles. "
+                "Subscribe for daily luxury real estate tours and secrets!"
+            ),
+            "sentences": [
+                {
+                    "text": "Inside this $100 Million Mega Mansion lies a secret room hidden behind a waterfall.",
+                    "keywords": ["luxury mansion pool", "modern villa exterior"]
+                },
+                {
+                    "text": "The primary suite spans 3,000 square feet with 24-karat gold finishes.",
+                    "keywords": ["luxury penthouse bedroom", "modern interior design"]
+                },
+                {
+                    "text": "An underground garage houses up to twenty supercar collectibles.",
+                    "keywords": ["luxury garage supercar", "modern architecture"]
+                },
+                {
+                    "text": "Subscribe for daily luxury real estate tours and secrets!",
+                    "keywords": ["luxury home living room", "modern house tour"]
+                }
+            ],
+            "title_keyword": "Mega Mansion Secrets",
+            "word_count": 52,
+            "niche": "real_estate",
+            "fallback": True,
+        }
+    else:
+        return {
+            "hook_text": "Close Stellar Nursery",
+            "narration": (
+                "Inside this glowing cosmic cloud, thousands of new stars are being born right now. "
+                "The Orion Nebula is located 1,344 light-years away from Earth. "
+                "Hubble captured incredible forming solar systems inside these gas pillars. "
+                "Subscribe for daily mind-blowing space facts!"
+            ),
+            "sentences": [
+                {
+                    "text": "Inside this glowing cosmic cloud, thousands of new stars are being born right now.",
+                    "keywords": ["space nebula stars", "galaxy cosmic cloud"]
+                },
+                {
+                    "text": "The Orion Nebula is located 1,344 light-years away from Earth.",
+                    "keywords": ["orion nebula deep space", "planet earth space"]
+                },
+                {
+                    "text": "Hubble captured incredible forming solar systems inside these gas pillars.",
+                    "keywords": ["hubble telescope space", "solar system forming"]
+                },
+                {
+                    "text": "Subscribe for daily mind-blowing space facts!",
+                    "keywords": ["deep space universe", "stars galaxy animation"]
+                }
+            ],
+            "title_keyword": "Orion Nebula",
+            "word_count": 51,
+            "niche": "space",
+            "fallback": True,
         }
 
 
-def generate_neo_script(neo_data: dict, model_name: str = "gemini-2.0-flash-lite") -> dict:
-    """Generate narration script from NEO asteroid data using Gemini."""
-    _init_gemini()
-
-    top = neo_data.get("top_asteroid", {})
-    user_prompt = NEO_USER_PROMPT_TEMPLATE.format(
-        count=neo_data.get("count", 0),
-        name=top.get("name", "an unknown asteroid"),
-        miss_km=int(top.get("miss_distance_km") or 0),
-        date=top.get("date", "this week"),
-        diameter=top.get("diameter_km", "unknown"),
-        hazardous="Yes" if top.get("is_potentially_hazardous") else "No",
-        hazardous_count=neo_data.get("hazardous_count", 0),
-    )
-
-    try:
-        raw = _call_gemini(model_name, NEO_SYSTEM_PROMPT, user_prompt)
-        parsed = _parse_json_response(raw)
-        
-        # Merge cta
-        cta = config.get("youtube", {}).get("cta", "Follow for daily space facts.")
-        if cta not in parsed.get("narration", ""):
-            parsed["narration"] = f"{parsed.get('narration', '')} {cta}"
-            
-        parsed["word_count"] = _word_count(parsed.get("narration", ""))
-        parsed["content_type"] = "asteroid_watch"
-        return parsed
-    except Exception as e:
-        logger.error(f"Gemini generation failed completely: {e}")
-        logger.warning("Falling back to local extraction from NASA data (No AI used).")
-        
-        name = top.get("name", "An asteroid")
-        date = top.get("date", "this week")
-        narration = f"This week, {name} makes its closest approach on {date}. Follow for daily space facts."
-        
-        return {
-            "hook_text": "Asteroid Close Call",
-            "title_keyword": "Asteroid Watch",
-            "narration": narration,
-            "word_count": _word_count(narration),
-            "content_type": "asteroid_watch",
-        }
-
-
-# ── DRY RUN fixture ────────────────────────────────────────────────────────────
+# ── DRY RUN ────────────────────────────────────────────────────────────────────
 _DRY_RUN_SCRIPT = {
+    "hook_text": "Inside $100M Mega Mansion",
     "narration": (
-        "Inside this glowing cloud, thousands of new stars are being born right now. "
-        "The Orion Nebula is just 1,344 light-years away, making it the closest stellar "
-        "nursery to Earth. Hubble revealed entire solar systems forming inside these "
-        "gas pillars. We can actually watch stars being created. "
-        "Follow for daily space facts."
+        "Inside this $100 Million Mega Mansion lies a secret room hidden behind a waterfall. "
+        "The primary suite spans 3,000 square feet with 24-karat gold finishes. "
+        "An underground garage houses up to twenty supercar collectibles. "
+        "Subscribe for daily luxury real estate tours and secrets!"
     ),
-    "hook_text": "Stars Being Born Now",
-    "title_keyword": "Orion Nebula",
-    "word_count": 62,
-    "apod_title": "The Orion Nebula in Infrared",
-    "apod_date": "2024-07-04",
-    "content_type": "apod",
+    "sentences": [
+        {
+            "text": "Inside this $100 Million Mega Mansion lies a secret room hidden behind a waterfall.",
+            "keywords": ["luxury mansion pool", "modern villa exterior"]
+        },
+        {
+            "text": "The primary suite spans 3,000 square feet with 24-karat gold finishes.",
+            "keywords": ["luxury penthouse bedroom", "modern interior design"]
+        },
+        {
+            "text": "An underground garage houses up to twenty supercar collectibles.",
+            "keywords": ["luxury garage supercar", "modern architecture"]
+        },
+        {
+            "text": "Subscribe for daily luxury real estate tours and secrets!",
+            "keywords": ["luxury home living room", "modern house tour"]
+        }
+    ],
+    "title_keyword": "Mega Mansion Secrets",
+    "word_count": 52,
+    "niche": "real_estate",
     "dry_run": True,
 }
 
 
-# ── CLI ────────────────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(description="Generate narration script from APOD/NEO data.")
-    parser.add_argument("--apod", default="output/apod.json", help="Path to apod.json")
-    parser.add_argument("--neo", default=None, help="Path to neo.json (for asteroid watch)")
-    parser.add_argument("--output", default="output/script.json", help="Output path for script JSON")
-    parser.add_argument("--model", default="gemini-2.0-flash-lite", help="Gemini model name")
-    parser.add_argument("--dry-run", action="store_true", help="Skip Gemini API; write fixture data")
+    parser = argparse.ArgumentParser(description="Generate MoneyPrinterTurbo viral script.")
+    parser.add_argument("--niche", default="real_estate", help="Niche: real_estate | space")
+    parser.add_argument("--topic", default=None, help="Custom topic prompt")
+    parser.add_argument("--output", default="output/script.json", help="Output JSON path")
+    parser.add_argument("--dry-run", action="store_true", help="Use dry-run fixture")
     args = parser.parse_args()
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if args.dry_run:
-        logger.info("DRY RUN — writing fixture script data.")
-        with open(output_path, "w") as f:
-            json.dump(_DRY_RUN_SCRIPT, f, indent=2)
-        print(json.dumps(_DRY_RUN_SCRIPT, indent=2))
-        return
-
-    if args.neo:
-        with open(args.neo) as f:
-            neo_data = json.load(f)
-        result = generate_neo_script(neo_data, model_name=args.model)
+        result = _DRY_RUN_SCRIPT
     else:
-        with open(args.apod) as f:
-            apod_data = json.load(f)
-        result = generate_apod_script(apod_data, model_name=args.model)
+        result = generate_viral_script(niche=args.niche, topic=args.topic)
 
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
-    logger.info(f"Script saved → {output_path}")
+
+    logger.info(f"Script saved -> {output_path}")
     print(json.dumps(result, indent=2))
 
 

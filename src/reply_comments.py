@@ -25,13 +25,27 @@ from typing import Optional
 
 import google.generativeai as genai
 from googleapiclient.errors import HttpError
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-    before_sleep_log,
-)
+try:
+    from tenacity import (
+        retry,
+        retry_if_exception_type,
+        stop_after_attempt,
+        wait_exponential,
+        before_sleep_log,
+    )
+    def _make_retry():
+        return retry(
+            retry=retry_if_exception_type(Exception),
+            stop=stop_after_attempt(5),
+            wait=wait_exponential(multiplier=1, min=2, max=30),
+            before_sleep=before_sleep_log(logger, logging.WARNING),
+            reraise=True,
+        )
+except ImportError:
+    def _make_retry():
+        def decorator(func):
+            return func
+        return decorator
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
