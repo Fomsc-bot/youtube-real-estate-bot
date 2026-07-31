@@ -84,7 +84,7 @@ def _build_filter_complex(
     subscribe_badge_exists: bool,
     logo_exists: bool,
     bgm_exists: bool,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     """
     Build complete FFmpeg filtergraph string including multi-scene visuals,
     karaoke captions, subscribe popup, progress bar, and BGM audio mix.
@@ -92,23 +92,24 @@ def _build_filter_complex(
     filters = []
     
     # ── 1. Visual Composition (Scenes) ──
-    # Input 0:v is the primary visual stream
     filters.append(
         f"[0:v]scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=increase,"
         f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},"
         f"setsar=1[v_base]"
     )
 
-    font_path_escaped = font_path.replace("\\", "/").replace(":", "\\:")
-    if not Path(font_path).exists():
+    fpath = Path(font_path)
+    if fpath.exists():
+        font_path_escaped = str(fpath.resolve()).replace("\\", "/").replace(":", "\\:")
+    else:
         font_path_escaped = FALLBACK_FONT
 
     # ── 2. Hook Text Overlay (0s - 2.5s) ──
     hook_duration = 2.5
-    hook_path_escaped = str(hook_text_path).replace("\\", "/").replace(":", "\\:")
+    hook_path_escaped = str(hook_text_path.resolve()).replace("\\", "/").replace(":", "\\:")
     filters.append(
         f"[v_base]drawtext="
-        f"fontfile={font_path_escaped}:"
+        f"fontfile='{font_path_escaped}':"
         f"textfile='{hook_path_escaped}':"
         f"fontsize=115:"
         f"fontcolor=white:"
@@ -138,10 +139,9 @@ def _build_filter_complex(
         end = entry["end_s"]
         next_label = f"v_w{i}"
 
-        # Karaoke text drawtext filter (Yellow active word with black stroke)
         filters.append(
             f"[{current_label}]drawtext="
-            f"fontfile={font_path_escaped}:"
+            f"fontfile='{font_path_escaped}':"
             f"text='{word_clean}':"
             f"fontsize=135:"
             f"fontcolor=yellow:"
@@ -154,15 +154,14 @@ def _build_filter_complex(
         )
         current_label = next_label
 
-    # ── 4. Progress Bar Overlay (Remotion Retention Feature) ──
-    # Draws a dynamic yellow line growing across top of screen
+    # ── 4. Progress Bar Overlay ──
     filters.append(
         f"[{current_label}]drawbox="
         f"x=0:y=0:w='min(w,w*(t/{total_duration:.2f}))':h=16:color=yellow@0.9:t=fill[v_prog]"
     )
     current_label = "v_prog"
 
-    # ── 5. Subscribe Badge Popup (Last 4 seconds CTA) ──
+    # ── 5. Subscribe Badge Popup (Last 4.5 seconds CTA) ──
     input_idx = 2
     if subscribe_badge_exists:
         sub_start = max(0.0, total_duration - 4.5)
@@ -191,10 +190,8 @@ def _build_filter_complex(
         final_video_label = "v_final"
 
     # ── 7. Audio Ducking Filter Complex (Voice + BGM Mix) ──
-    # Input 1:a is narration speech audio, input (bgm_idx):a is background music
     if bgm_exists:
         bgm_input_idx = input_idx if not logo_exists else input_idx + 1
-        # Mix voiceover at 1.0 vol and BGM at 0.15 vol
         filters.append(
             f"[1:a]volume=1.0[a_voice];"
             f"[{bgm_input_idx}:a]volume=0.15,aloop=loop=-1:size=2e+09[a_bgm];"
@@ -221,27 +218,23 @@ def build_video(
     output_dir = output_path.parent
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Read script for hook text
     hook_text = "LUXURY REAL ESTATE"
     if script_path.exists():
         with open(script_path, encoding="utf-8") as f:
             script_data = json.load(f)
             hook_text = script_data.get("hook_text", hook_text)
 
-    # Write wrapped hook text file
     wrapped_hook = textwrap.fill(hook_text.upper(), width=14)
     hook_text_path = output_dir / "hook_text.txt"
     with open(hook_text_path, "w", encoding="utf-8") as f:
         f.write(wrapped_hook)
 
-    # Read scenes metadata if present
     scenes_meta_path = output_dir / "scenes_meta.json"
     scenes_meta = []
     if scenes_meta_path.exists():
         with open(scenes_meta_path, encoding="utf-8") as f:
             scenes_meta = json.load(f).get("scenes", [])
 
-    # Read audio duration
     audio_meta_path = output_dir / "audio_meta.json"
     audio_duration = 20.0
     bgm_path_str = "assets/bgm/ambient_viral.mp3"
@@ -256,7 +249,6 @@ def build_video(
     words = parse_vtt(vtt_path)
     font_path = cfg.get("caption_font", DEFAULT_FONT)
 
-    # Check overlays
     badge_path = Path(SUBSCRIBE_BADGE_PATH)
     if not badge_path.exists():
         from src.generate_assets import ensure_assets
@@ -265,7 +257,6 @@ def build_video(
     logo_path = Path(cfg.get("logo_path", LOGO_PATH))
     bgm_path = Path(bgm_path_str)
 
-    # Build filter complex
     filter_str, final_v_label, final_a_label = _build_filter_complex(
         words=words,
         total_duration=total_duration,
@@ -277,29 +268,30 @@ def build_video(
         bgm_exists=bgm_path.exists(),
     )
 
-    # Determine visual source
     primary_image = image_path
     if not primary_image.exists():
-        # Check scene images
         scene_files = list((output_dir / "scenes").glob("scene_*.jpg"))
         if scene_files:
             primary_image = scene_files[0]
+        else:
+            # Create procedural image fallback if none exists
+            from src.fetch_content import create_fallback_scene_image
+            primary_image = create_fallback_scene_image(hook_text, "Real Estate", output_dir / "default_visual.jpg")
 
-    # Build FFmpeg command
     cmd = [
         "ffmpeg", "-y",
-        "-loop", "1", "-i", str(primary_image),  # [0:v] Visual
-        "-i", str(audio_path),                   # [1:a] Speech Audio
+        "-loop", "1", "-i", str(primary_image.resolve()),
+        "-i", str(audio_path.resolve()),
     ]
 
     if badge_path.exists():
-        cmd += ["-i", str(badge_path)]           # [2:v] Subscribe Badge
+        cmd += ["-i", str(badge_path.resolve())]
 
     if logo_path.exists():
-        cmd += ["-i", str(logo_path)]            # Logo
+        cmd += ["-i", str(logo_path.resolve())]
 
     if bgm_path.exists():
-        cmd += ["-i", str(bgm_path)]             # BGM Audio
+        cmd += ["-i", str(bgm_path.resolve())]
 
     cmd += [
         "-filter_complex", filter_str,
@@ -315,7 +307,7 @@ def build_video(
         "-pix_fmt", "yuv420p",
         "-movflags", "+faststart",
         "-r", str(FPS),
-        str(output_path),
+        str(output_path.resolve()),
     ]
 
     logger.info("Executing FFmpeg Video Compositor...")

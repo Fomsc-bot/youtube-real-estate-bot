@@ -1,10 +1,9 @@
-name: "🌌 The Universe — Daily Shorts Upload"
+name: "🎬 Real Estate & Viral Shorts — Daily Upload"
 
 on:
   schedule:
-    #- cron: "0 14 * * *"   # 2:00 PM UTC = 7:30 PM IST — daily
     - cron: '30 12 * * *'
-  workflow_dispatch:         # Manual trigger from Actions tab
+  workflow_dispatch:
     inputs:
       dry_run:
         description: "Dry run (no upload)"
@@ -12,36 +11,33 @@ on:
         default: "false"
         type: choice
         options: ["true", "false"]
-      neo_mode:
-        description: "Force Asteroid Watch mode"
+      niche:
+        description: "Select Niche"
         required: false
-        default: "false"
+        default: "real_estate"
         type: choice
-        options: ["true", "false"]
-      apod_date:
-        description: "Specific APOD date (YYYY-MM-DD, blank = today)"
+        options: ["real_estate", "space"]
+      topic:
+        description: "Custom Topic Prompt (optional)"
         required: false
         default: ""
 
 jobs:
   upload-shorts:
-    name: "Build & Upload Space Short"
+    name: "Build & Upload Viral Short"
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      # ── 1. Checkout ─────────────────────────────────────────────────────────
       - name: "📦 Checkout Repository"
         uses: actions/checkout@v4
 
-      # ── 2. Python setup ─────────────────────────────────────────────────────
       - name: "🐍 Set up Python 3.11"
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      # ── 3. System dependencies ───────────────────────────────────────────────
       - name: "🔧 Install System Dependencies (FFmpeg + fonts)"
         run: |
           sudo apt-get update -qq
@@ -51,7 +47,6 @@ jobs:
             wget
           echo "FFmpeg version: $(ffmpeg -version | head -1)"
 
-      # ── 4. Download Montserrat Bold font ─────────────────────────────────────
       - name: "🔤 Download Montserrat Bold font"
         run: |
           mkdir -p assets/fonts
@@ -60,66 +55,60 @@ jobs:
               "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Bold.ttf"
             echo "Font downloaded: $(du -h assets/fonts/Montserrat-Bold.ttf)"
           else
-            echo "Font already present (cached)"
+            echo "Font already present"
           fi
 
-      # ── 5. Python dependencies ───────────────────────────────────────────────
       - name: "📚 Install Python Dependencies"
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ── 6. Create output directory ────────────────────────────────────────────
       - name: "📁 Prepare output directory"
         run: mkdir -p output
 
-      # ── 7. Run the pipeline ───────────────────────────────────────────────────
-      - name: "🚀 Run The Universe Pipeline"
+      - name: "🚀 Run Viral Shorts Pipeline"
         env:
           NASA_API_KEY: ${{ secrets.NASA_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           YOUTUBE_CREDENTIALS_JSON: ${{ secrets.YOUTUBE_CREDENTIALS_JSON }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           DRY_RUN_FLAG=""
-          NEO_FLAG=""
-          DATE_FLAG=""
+          NICHE_FLAG=""
+          TOPIC_FLAG=""
 
-          # Handle workflow_dispatch inputs
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             DRY_RUN_FLAG="--dry-run"
           fi
-          if [ "${{ github.event.inputs.neo_mode }}" = "true" ]; then
-            NEO_FLAG="--neo"
+          if [ -n "${{ github.event.inputs.niche }}" ]; then
+            NICHE_FLAG="--niche ${{ github.event.inputs.niche }}"
           fi
-          if [ -n "${{ github.event.inputs.apod_date }}" ]; then
-            DATE_FLAG="--date ${{ github.event.inputs.apod_date }}"
+          if [ -n "${{ github.event.inputs.topic }}" ]; then
+            TOPIC_FLAG="--topic '${{ github.event.inputs.topic }}'"
           fi
 
-          python main.py $DRY_RUN_FLAG $NEO_FLAG $DATE_FLAG
+          python main.py $DRY_RUN_FLAG $NICHE_FLAG $TOPIC_FLAG
 
-      # ── 8. Upload artifacts on failure for debugging ──────────────────────────
       - name: "📎 Upload debug artifacts"
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: "pipeline-output-${{ github.run_id }}"
           path: |
-            output/apod.json
             output/script.json
+            output/scenes_meta.json
             output/audio_meta.json
             output/metadata.json
             output/upload_result.json
           retention-days: 7
           if-no-files-found: ignore
 
-      # ── 9. Failure notice ─────────────────────────────────────────────────────
       - name: "❌ Report Pipeline Failure"
         if: failure()
         run: |
-          echo "::error title=Pipeline Failed::The Universe daily upload pipeline failed."
-          echo "::error::Check the steps above. Common causes:"
-          echo "::error::  - NASA_API_KEY not set (use DEMO_KEY fallback)"
-          echo "::error::  - GEMINI_API_KEY missing or quota exceeded"
-          echo "::error::  - YOUTUBE_CREDENTIALS_JSON missing or refresh token expired"
-          echo "::error::  - FFmpeg error in build_video step"
-          echo "::error::Run locally with: python main.py --dry-run"
+          echo "::error title=Pipeline Failed::The Daily Upload Pipeline encountered an issue."
+          echo "::error::Common resolutions:"
+          echo "::error::  1. Add 'GEMINI_API_KEY' to GitHub Repo Secrets (Settings -> Secrets -> Actions)"
+          echo "::error::  2. Add 'YOUTUBE_CREDENTIALS_JSON' (Base64 JSON of YouTube OAuth2 token)"
+          echo "::error::  3. Optional: Add 'PEXELS_API_KEY' for automatic 9:16 HD stock video fetching"
+          echo "::error::Run locally to test: python main.py --dry-run"
