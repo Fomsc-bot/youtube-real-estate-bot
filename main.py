@@ -17,7 +17,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -55,7 +55,7 @@ def main(
     topic: str = None,
     date: str = None,
 ) -> None:
-    start_time = datetime.now(datetime.UTC)
+    start_time = datetime.now(timezone.utc)
     ensure_assets()
 
     banner("🚀 VIRAL YOUTUBE SHORTS PIPELINE — MoneyPrinterTurbo + Remotion")
@@ -157,7 +157,7 @@ def main(
     logger.info(f"   URL: {upload_result.get('video_url', 'N/A')}")
 
     # ── Summary ───────────────────────────────────────────────────────────────
-    elapsed = (datetime.now(datetime.UTC) - start_time).total_seconds()
+    elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
     banner("🎉 VIRAL PIPELINE COMPLETED SUCCESSFULLY")
     logger.info(f"Total time:  {elapsed:.1f}s")
     logger.info(f"Niche:       {niche.upper()}")
