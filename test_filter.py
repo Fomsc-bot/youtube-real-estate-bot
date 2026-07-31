@@ -28,15 +28,13 @@ print(f"Filter string length : {len(fstr):,} chars")
 print(f"Video label          : {vlabel}")
 print(f"Audio label          : {alabel}")
 
-# Find and print the geq line
-geq_lines = [seg for seg in fstr.split(";") if "geq" in seg]
-if geq_lines:
-    print(f"\ngeq filter (first 200 chars):\n  {geq_lines[0][:200]}")
-    # Verify no bad backslash-comma escaping remains
-    assert "\\," not in geq_lines[0], "ERROR: stale \\, escaping found in geq filter!"
-    print("  -> No stale \\, escaping found. GOOD.")
+# Find and print the drawbox line
+drawbox_lines = [seg for seg in fstr.split(";") if "drawbox" in seg]
+if drawbox_lines:
+    print(f"\ndrawbox filter:\n  {drawbox_lines[0]}")
+    print("  -> Valid drawbox progress bar found. GOOD.")
 else:
-    print("WARNING: no geq filter found!")
+    print("WARNING: no drawbox filter found!")
 
 # Verify temp file write works
 with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:

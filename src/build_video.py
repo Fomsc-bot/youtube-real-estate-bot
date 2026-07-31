@@ -155,14 +155,14 @@ def _build_filter_complex(
         current_label = next_label
 
     # ── 4. Progress Bar Overlay ──
-    # Written to -filter_complex_script file, so NO backslash-escaping of commas.
-    # geq paints top 8px yellow when pixel X is within W*(t/duration).
+    # drawbox evaluates iw * t / duration per frame natively in FFmpeg (no geq syntax/eval errors).
     filters.append(
-        f"[{current_label}]geq="
-        f"r='if(lte(Y,8)*lte(X,W*t/{total_duration:.4f}),255,r(X,Y))':"
-        f"g='if(lte(Y,8)*lte(X,W*t/{total_duration:.4f}),220,g(X,Y))':"
-        f"b='if(lte(Y,8)*lte(X,W*t/{total_duration:.4f}),0,b(X,Y))':"
-        f"a='alpha(X,Y)'[v_prog]"
+        f"[{current_label}]drawbox="
+        f"x=0:y=0:"
+        f"w='iw*t/{total_duration:.4f}':"
+        f"h=10:"
+        f"color=yellow:"
+        f"t=fill[v_prog]"
     )
     current_label = "v_prog"
 
