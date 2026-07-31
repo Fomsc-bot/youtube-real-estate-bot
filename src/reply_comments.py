@@ -23,7 +23,12 @@ import time
 from pathlib import Path
 from typing import Optional
 
-import google.generativeai as genai
+try:
+    from google import genai
+    from google.genai import types as genai_types
+except ImportError:
+    genai = None
+    genai_types = None
 from googleapiclient.errors import HttpError
 try:
     from tenacity import (
@@ -85,11 +90,14 @@ Commenter said: "{comment}"
 Write a warm, science-enthusiastic reply (1–2 sentences, max 30 words)."""
 
 
-def _init_gemini() -> None:
+def _get_gemini_client():
+    """Create and return a google.genai Client instance."""
+    if genai is None:
+        raise EnvironmentError("google-genai not installed. Run: pip install google-genai")
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise EnvironmentError("GEMINI_API_KEY environment variable is not set.")
-    genai.configure(api_key=api_key)
+    return genai.Client(api_key=api_key)
 
 
 def _is_spam(comment_text: str) -> bool:
@@ -113,58 +121,32 @@ def _is_spam(comment_text: str) -> bool:
     reraise=True,
 )
 def _generate_reply(comment_text: str, topic: str, model_name: str = "gemini-2.0-flash-lite") -> str:
-    """Use Gemini to generate an on-brand reply."""
-    _init_gemini()
+    """Use Gemini (google.genai SDK) to generate an on-brand reply."""
+    client = _get_gemini_client()
     prompt = REPLY_USER_TEMPLATE.format(topic=topic, comment=comment_text[:300])
-    try:
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            system_instruction=REPLY_SYSTEM_PROMPT,
-        )
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.6,
-                max_output_tokens=80,
-            ),
-            safety_settings={
-                genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-            },
-            request_options={"timeout": 30},
-        )
-        reply = response.text.strip()
-        logger.info(f"Generated reply: {reply}")
-        return reply
-    except Exception as e:
-        if "429" in str(e) or "404" in str(e):
-            logger.warning(f"Hit 429/404 Error on {model_name}. Attempting fallback...")
-            fallback_model = "gemini-2.0-flash" if "lite" in model_name else "gemini-2.0-flash-lite"
-            logger.info(f"Calling fallback Gemini model: {fallback_model} ...")
-            model = genai.GenerativeModel(
-                model_name=fallback_model,
-                system_instruction=REPLY_SYSTEM_PROMPT,
-            )
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
+    models_to_try = [model_name, "gemini-2.0-flash", "gemini-1.5-flash"]
+    last_err = None
+    for m in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=m,
+                contents=prompt,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=REPLY_SYSTEM_PROMPT,
                     temperature=0.6,
                     max_output_tokens=80,
                 ),
-                safety_settings={
-                    genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                    genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                    genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                    genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                },
-                request_options={"timeout": 30},
             )
-            reply = response.text.strip()
-            logger.info(f"Fallback reply: {reply}")
+            reply = (response.text or "").strip()
+            logger.info(f"Generated reply via {m}: {reply}")
             return reply
-        raise
+        except Exception as e:
+            logger.warning(f"Gemini model '{m}' failed for reply: {e}")
+            last_err = e
+    raise last_err or RuntimeError("All Gemini reply models failed.")
+
+
+
 
 
 def fetch_and_reply_comments(
