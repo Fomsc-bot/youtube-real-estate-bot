@@ -38,19 +38,25 @@ try:
         wait_exponential,
         before_sleep_log,
     )
-    def _make_retry():
-        return retry(
-            retry=retry_if_exception_type(Exception),
-            stop=stop_after_attempt(5),
-            wait=wait_exponential(multiplier=1, min=2, max=30),
-            before_sleep=before_sleep_log(logger, logging.WARNING),
-            reraise=True,
-        )
 except ImportError:
-    def _make_retry():
+    # No-op fallbacks so @retry(...) decorators don't raise NameError
+    def retry(*args, **kwargs):  # type: ignore[misc]
         def decorator(func):
             return func
         return decorator
+
+    def retry_if_exception_type(*args, **kwargs):  # type: ignore[misc]
+        return None
+
+    def stop_after_attempt(*args, **kwargs):  # type: ignore[misc]
+        return None
+
+    def wait_exponential(*args, **kwargs):  # type: ignore[misc]
+        return None
+
+    def before_sleep_log(*args, **kwargs):  # type: ignore[misc]
+        return None
+
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
