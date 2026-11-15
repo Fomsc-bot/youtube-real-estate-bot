@@ -84,9 +84,10 @@ def main(
                     logger.info(f"✅ Article fetched: {source_content['title'][:60]}")
                     logger.info(f"   Source: {source_content.get('article_url', '')[:60]}")
                 else:
-                    logger.warning("⚠️  No article fetched — using BTS topic pool fallback.")
+                    raise RuntimeError("No recent BTS source item was available; skipping this upload to avoid recycled or unsupported claims.")
             except Exception as e:
-                logger.warning(f"⚠️  Article fetch failed: {e} — using BTS topic pool fallback.")
+                logger.error(f"BTS source collection failed: {e}")
+                raise
 
         elif niche == "space":
             nasa_key = os.environ.get("NASA_API_KEY") or "DEMO_KEY"
@@ -99,6 +100,11 @@ def main(
         script_data = generate_viral_script(
             niche=niche, topic=topic, source_content=source_content
         )
+        if niche == "bts" and source_content:
+            script_data["source_url"] = source_content.get("article_url")
+            script_data["source_publisher"] = source_content.get("source")
+            script_data["source_title"] = source_content.get("title")
+            script_data["source_published_at"] = source_content.get("published_at")
         save_json(script_data, output_dir / "script.json")
 
     logger.info(f"✅ Step 1 complete. Script ({script_data.get('word_count', '?')} words):")
@@ -158,7 +164,7 @@ def main(
     logger.info(f"✅ Step 4 complete. Video: {video_path}")
 
     # ── Step 5: Generate Viral Metadata & Pinned Comment ──────────────────────
-    banner("Step 5/6 — Generating High-CTR Metadata & Pinned Comment")
+    banner("Step 5/6 — Generating Source-Linked Metadata")
     if dry_run:
         from src.generate_metadata import _DRY_RUN_METADATA as metadata
         save_json(metadata, output_dir / "metadata.json")
@@ -168,7 +174,7 @@ def main(
     logger.info(f"✅ Step 5 complete. Title: '{metadata.get('title', '')}'")
 
     # ── Step 6: Upload to YouTube ─────────────────────────────────────────────
-    banner("Step 6/6 — Uploading Video & Pinning Subscriber Comment")
+    banner("Step 6/6 — Uploading Video")
     upload_result = upload_to_youtube(
         video_path=video_output,
         metadata=metadata,
@@ -185,7 +191,7 @@ def main(
     logger.info(f"Niche:       {niche.upper()}")
     logger.info(f"Title:       {metadata.get('title', '')}")
     logger.info(f"Video URL:   {upload_result.get('video_url', 'N/A')}")
-    logger.info(f"Pinned CTA:  {metadata.get('pinned_comment', 'N/A')}")
+    logger.info(f"Viewer prompt:  {metadata.get('viewer_prompt', 'N/A')}")
 
 
 if __name__ == "__main__":

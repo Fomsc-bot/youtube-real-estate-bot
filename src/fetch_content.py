@@ -3,7 +3,7 @@ fetch_content.py — Step 1 & Visual Fetcher for YouTube Shorts
 
 Fetches real, relevant high-resolution photos and video clips for YouTube Shorts:
   1. Identifies BTS member or topic per sentence (Jungkook, Jin, RM, Suga, J-Hope, Jimin, V, or BTS group)
-  2. Queries Wikipedia & Wikimedia REST API for authentic, high-resolution official photos (100% Free)
+  2. Creates original BTS editorial cards from the generated script
   3. Formats each photo into 1080x1920 (9:16 vertical Short) with cinematic blurred background + sharp foreground
   4. Also supports Pexels stock video API if key is present
   5. Smooth fallback if network is offline
@@ -18,11 +18,11 @@ from io import BytesIO
 import json
 import logging
 import os
-import random
 import re
 import sys
 import time
 from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Optional, List
 from urllib.parse import quote
@@ -317,93 +317,48 @@ BTS_NEWS_FEEDS = [
 
 def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
     """
-    Fetch the latest breaking BTS news article from verified K-pop feeds.
-    Extracts the article headline, summary, and downloads its authentic photo.
-    100% Free, no API keys needed.
+    Select the newest usable headline/excerpt from free BTS RSS feeds.
+    Do not download publisher photos: create original editorial graphics instead.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    # Shuffle feeds to discover diverse member/group breaking stories
-    shuffled_feeds = list(BTS_NEWS_FEEDS)
-    random.shuffle(shuffled_feeds)
+    import xml.etree.ElementTree as ET
+    from html import unescape
 
-    for feed_url in shuffled_feeds:
+    candidates = []
+    cutoff = datetime.now().astimezone() - timedelta(days=3)
+    for feed_url in BTS_NEWS_FEEDS:
         try:
-            r = requests.get(feed_url, headers=HTTP_HEADERS, timeout=10)
-            if r.status_code != 200:
+            response = requests.get(feed_url, headers=HTTP_HEADERS, timeout=10)
+            if response.status_code != 200:
                 continue
-            import xml.etree.ElementTree as ET
-            root = ET.fromstring(r.text)
-            items = root.findall(".//item")
-            if not items:
-                continue
-
-            for item in items[:6]:
-                title = item.find("title").text if item.find("title") is not None else ""
-                link = item.find("link").text if item.find("link") is not None else ""
-                desc = item.find("description").text if item.find("description") is not None else ""
-
-                if not link or not title:
+            root = ET.fromstring(response.text)
+            for item in root.findall(".//item")[:12]:
+                title = unescape((item.findtext("title") or "").strip())
+                link = (item.findtext("link") or "").strip()
+                excerpt = unescape(re.sub(r"<[^>]+>", " ", item.findtext("description") or ""))
+                excerpt = re.sub(r"\s+", " ", excerpt).strip()[:1200]
+                pub_text = item.findtext("pubDate") or ""
+                if not title or not link:
                     continue
-
-                # Fetch article HTML to extract the high-res og:image
-                ar = requests.get(link, headers=HTTP_HEADERS, timeout=10)
-                if ar.status_code != 200:
+                try:
+                    published = parsedate_to_datetime(pub_text).astimezone()
+                except (TypeError, ValueError, OverflowError):
                     continue
-                html = ar.text
-
-                og_img = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html)
-                if not og_img:
-                    og_img = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html)
-                if not og_img:
+                if published < cutoff or published > datetime.now().astimezone() + timedelta(hours=6):
                     continue
+                if not re.search(r"\b(BTS|Bangtan|Jungkook|Jimin|Jin|Suga|Yoongi|RM|Namjoon|J-Hope|Hobi|V|Taehyung)\b", title, re.I):
+                    continue
+                candidates.append({"title": title, "description": excerpt, "article_url": link,
+                    "published_at": published.isoformat(), "source": "Soompi"})
+        except Exception as error:
+            logger.warning(f"Could not read BTS RSS feed {feed_url}: {error}")
 
-                img_url = og_img.group(1)
-                img_resp = requests.get(img_url, headers=HTTP_HEADERS, timeout=12)
-                if img_resp.status_code == 200 and len(img_resp.content) > 5000:
-                    dest_img = output_dir / "article_image.jpg"
-                    
-                    # Format to 1080x1920 (9:16 Shorts)
-                    orig = Image.open(BytesIO(img_resp.content)).convert("RGB")
-                    w, h = orig.size
-
-                    bg_scale = max(1080 / w, 1920 / h)
-                    bg_w, bg_h = int(w * bg_scale), int(h * bg_scale)
-                    bg = orig.resize((bg_w, bg_h), Image.Resampling.LANCZOS)
-                    left = (bg_w - 1080) // 2
-                    top = (bg_h - 1920) // 2
-                    bg = bg.crop((left, top, left + 1080, top + 1920))
-                    bg = bg.filter(ImageFilter.GaussianBlur(radius=28))
-
-                    tint = Image.new("RGBA", (1080, 1920), (35, 10, 50, 115))
-                    bg = Image.alpha_composite(bg.convert("RGBA"), tint).convert("RGB")
-
-                    fg_scale = min(1000 / w, 1050 / h)
-                    fg_w, fg_h = int(w * fg_scale), int(h * fg_scale)
-                    fg = orig.resize((fg_w, fg_h), Image.Resampling.LANCZOS)
-
-                    fg_x = (1080 - fg_w) // 2
-                    fg_y = 270 + (1050 - fg_h) // 2
-                    bg.paste(fg, (fg_x, fg_y))
-
-                    draw = ImageDraw.Draw(bg)
-                    draw.rectangle([fg_x - 4, fg_y - 4, fg_x + fg_w + 4, fg_y + fg_h + 4], outline=(244, 208, 63), width=5)
-                    bg.save(dest_img, "JPEG", quality=95)
-
-                    clean_desc = re.sub(r"<[^>]+>", "", desc).strip()
-                    logger.info(f"✅ Downloaded & formatted article image from {link[:50]}...")
-                    return {
-                        "title": title.replace("&#039;", "'").replace("&quot;", '"'),
-                        "description": clean_desc.replace("&#039;", "'").replace("&quot;", '"'),
-                        "article_url": link,
-                        "image_url": img_url,
-                        "local_image_path": str(dest_img),
-                        "source": "Soompi BTS News",
-                    }
-        except Exception as e:
-            logger.warning(f"Error fetching from feed '{feed_url}': {e}")
-            continue
-
-    return None
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item["published_at"], reverse=True)
+    selected = candidates[0]
+    logger.info(f"Selected newest source item: {selected['title'][:100]} ({selected['article_url']})")
+    return selected
 
 
 def fetch_multi_scene_content(
@@ -448,7 +403,14 @@ def fetch_multi_scene_content(
                 media_type = "image"
                 logger.info(f"Using direct article image for scene {i} -> {image_dest}")
 
-        # 1. If Pexels video API key is set, try fetching stock video clip
+        is_bts = script_data.get("niche", "bts") == "bts"
+
+        # BTS videos use original editorial cards; do not imply third-party footage is official.
+        if is_bts:
+            fetched_path = create_fallback_scene_image(text, kw, image_dest)
+            media_type = "image"
+
+        # Non-BTS legacy niches may use licensed/authorized external stock.
         if not fetched_path and pexels_key:
             try:
                 fetched_path = fetch_pexels_video(kw, pexels_key, video_dest)
@@ -457,12 +419,7 @@ def fetch_multi_scene_content(
             except Exception as e:
                 logger.warning(f"Pexels fetch failed for '{kw}': {e}")
 
-        # 2. Fetch real, authentic photo from Wikipedia/Wikimedia
-        if not fetched_path:
-            fetched_path = fetch_relevant_bts_image(kw, text, image_dest, scene_index=i)
-            media_type = "image"
-
-        # 3. Procedural card fallback if network is offline
+        # 2. Procedural card fallback if network is offline
         if not fetched_path:
             fetched_path = create_fallback_scene_image(text, kw, image_dest)
             media_type = "image"
@@ -563,8 +520,7 @@ def main():
         with open(script_path, encoding="utf-8") as f:
             script_data = json.load(f)
     else:
-        from src.generate_script import get_fallback_script
-        script_data = get_fallback_script("bts")
+        raise FileNotFoundError(f"Script file not found: {script_path}")
 
     scenes_meta = fetch_multi_scene_content(script_data, output_dir)
     print(json.dumps({"scenes": scenes_meta}, indent=2))

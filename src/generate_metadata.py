@@ -14,7 +14,6 @@ Usage:
 import argparse
 import json
 import logging
-import random
 import re
 from datetime import datetime
 from pathlib import Path
@@ -34,15 +33,13 @@ HASHTAGS_SPACE = ["#shorts", "#space", "#nasa", "#astronomy", "#spacefacts", "#u
 HASHTAGS_VIRAL = ["#mindblowing", "#didyouknow", "#amazingfacts", "#viral", "#btsforever"]
 
 
-def _build_title(keyword: str, hook_text: str, niche: str = "bts") -> str:
-    """Build a high-CTR YouTube title (< 60 chars)."""
+def _build_title(keyword: str, hook_text: str, niche: str = "bts", suggested_title: str = "") -> str:
+    """Use a specific, accurate title; avoid random emoji/hashtag padding."""
     if niche == "bts":
-        emoji = random.choice(["💜", "✨", "👑", "🎤", "🔥"])
-        candidates = [
-            f"{emoji} {hook_text} #Shorts",
-            f"{emoji} BTS: {hook_text} | ARMY Update #Shorts",
-            f"💜 {keyword}: BTS Records Broken! #Shorts",
-        ]
+        title = re.sub(r"\s+", " ", suggested_title or keyword).strip(" -|#")
+        if not re.search(r"\bBTS\b", title, re.I):
+            title = f"{title} | BTS"
+        return title[:60].rstrip(" -|")
     elif niche == "real_estate":
         emoji = random.choice(["🏡", "🏰", "🔑", "✨", "💰"])
         candidates = [
@@ -68,11 +65,14 @@ def _build_description(
     keyword: str,
     hashtags: list[str],
     niche: str = "bts",
+    source_publisher: str = "",
+    source_url: str = "",
+    viewer_question: str = "",
 ) -> str:
     """Build subscriber-converting description and pinned comment prompt."""
     if niche == "bts":
-        cta_prompt = "🔔 Hit SUBSCRIBE for daily BTS updates, historic records & ARMY moments! 💜"
-        comment_prompt = "💬 QUESTION: Who is your BTS bias? Drop a 💜 in the comments below!"
+        cta_prompt = "Independent fan commentary. Subscribe for source-checked BTS stories and context."
+        comment_prompt = viewer_question.strip()
     elif niche == "real_estate":
         cta_prompt = "🔔 Hit SUBSCRIBE for daily luxury real estate tours, mega mansions & architectural secrets!"
         comment_prompt = "💬 QUESTION: Which feature of this property would you add to your dream house? Comment below!"
@@ -81,19 +81,24 @@ def _build_description(
         comment_prompt = "💬 QUESTION: What space mystery fascinates you the most? Comment below!"
 
     hashtag_str = " ".join(hashtags)
-    desc = (
-        f"{narration[:180]}...\n\n"
-        f"{cta_prompt}\n\n"
-        f"{comment_prompt}\n\n"
-        f"{hashtag_str}"
-    )
+    parts = [narration[:220].strip()]
+    if niche == "bts" and source_url:
+        parts.append(f"Source report ({source_publisher or 'publisher'}): {source_url}")
+    parts.extend(part for part in [cta_prompt, comment_prompt, hashtag_str] if part)
+    desc = "\n\n".join(parts)
     return desc
 
 
 def _build_hashtags(keyword: str, niche: str = "bts") -> list[str]:
-    """Select a balanced set of 6 viral hashtags."""
+    """Use only a few relevant hashtags rather than generic viral tags."""
     if niche == "bts":
-        pool = HASHTAGS_BTS
+        member_tags = {"rm": "#RM", "jin": "#Jin", "suga": "#SUGA", "j-hope": "#JHope", "jhope": "#JHope", "jimin": "#Jimin", "v": "#V", "taehyung": "#V", "jungkook": "#Jungkook"}
+        selected = ["#BTS", "#Shorts"]
+        for name, tag in member_tags.items():
+            if re.search(rf"\b{re.escape(name)}\b", keyword, re.I) and tag not in selected:
+                selected.insert(1, tag)
+                break
+        return selected
     elif niche == "real_estate":
         pool = HASHTAGS_REAL_ESTATE
     else:
@@ -105,10 +110,7 @@ def _build_hashtags(keyword: str, niche: str = "bts") -> list[str]:
     if kw_tag not in selected and len(kw_tag) < 22:
         selected.append(kw_tag)
 
-    remaining = [h for h in HASHTAGS_VIRAL if h not in selected]
-    random.shuffle(remaining)
-    selected += remaining[:max(0, 6 - len(selected))]
-    return selected[:6]
+    return selected[:3]
 
 
 def _build_tags(keyword: str, niche: str = "bts") -> list[str]:
@@ -145,21 +147,23 @@ def generate_metadata(script_data: dict, apod_data: Optional[dict] = None) -> di
     hook_text = script_data.get("hook_text", "BTS World Records")
     niche = script_data.get("niche", "bts")
 
-    title = _build_title(keyword, hook_text, niche)
+    title = _build_title(keyword, hook_text, niche, script_data.get("title", ""))
     hashtags = _build_hashtags(keyword, niche)
-    description = _build_description(narration, keyword, hashtags, niche)
+    description = _build_description(narration, keyword, hashtags, niche,
+        script_data.get("source_publisher", ""), script_data.get("source_url", ""),
+        script_data.get("viewer_question", ""))
     tags = _build_tags(keyword, niche)
 
     # Category 10 = Music (BTS), 24 = Entertainment (Real Estate), 28 = Science (Space)
     if niche == "bts":
         category_id = "10"
-        pinned_comment = "Who is your BTS bias? Drop a 💜 in the comments and subscribe for daily BTS updates! 👇"
+        viewer_prompt = script_data.get("viewer_question") or "What BTS story should we put in context next?"
     elif niche == "real_estate":
         category_id = "24"
-        pinned_comment = "Which feature of this tour surprised you the most? Hit SUBSCRIBE & comment below! 👇"
+        viewer_prompt = "Which feature of this tour surprised you the most? Hit SUBSCRIBE & comment below! 👇"
     else:
         category_id = "28"
-        pinned_comment = "What space mystery fascinates you the most? Hit SUBSCRIBE & comment below! 👇"
+        viewer_prompt = "What space mystery fascinates you the most? Hit SUBSCRIBE & comment below! 👇"
 
     metadata = {
         "title": title,
@@ -172,7 +176,7 @@ def generate_metadata(script_data: dict, apod_data: Optional[dict] = None) -> di
         "containsSyntheticMedia": False,
         "defaultLanguage": "en",
         "niche": niche,
-        "pinned_comment": pinned_comment,
+        "viewer_prompt": viewer_prompt,
     }
 
     logger.info(f"Metadata generated: title='{title}', tags={len(tags)}")
@@ -191,7 +195,7 @@ _DRY_RUN_METADATA = {
     "containsSyntheticMedia": False,
     "defaultLanguage": "en",
     "niche": "bts",
-    "pinned_comment": "Who is your BTS bias? Drop a 💜 in the comments and subscribe for daily BTS updates! 👇",
+    "viewer_prompt": "What BTS story should we put in context next?",
 }
 
 
@@ -213,8 +217,7 @@ def main():
             with open(script_path, encoding="utf-8") as f:
                 script_data = json.load(f)
         else:
-            from src.generate_script import get_fallback_script
-            script_data = get_fallback_script("bts")
+            raise FileNotFoundError(f"Script file not found: {script_path}")
 
         result = generate_metadata(script_data)
 

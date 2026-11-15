@@ -73,21 +73,6 @@ BTS_KEYWORDS = [
     "borahae", "love yourself", "map of the soul", "proof"
 ]
 
-BTS_TOPIC_POOL = [
-    "The Historic Guinness World Record Only BTS Has Ever Broken",
-    "How Jungkook Became the First K-Pop Soloist to Achieve 1 Billion Streams This Fast",
-    "The Emotional Meaning Behind BTS's Purple Heart and Borahae",
-    "Why BTS's UN General Assembly Speech Shook the Entire World",
-    "The Incredible Story of How RM Learned Fluent English from Friends",
-    "Jin's Heartwarming Promise to ARMY and What Happened Next",
-    "How SUGA Turned Underground Rapping into Global Stadium Anthems",
-    "J-Hope's Historic Lollapalooza Headline Performance That Made History",
-    "Jimin's Record-Breaking Solo Debut That Topped the Billboard Hot 100",
-    "Why V Taehyung's Deep Vocals and Jazz Records Broke Streaming History",
-    "The Untold Story of BTS's Pre-Debut Struggles in a One-Room Dorm",
-]
-
-# ── System Prompts ─────────────────────────────────────────────────────────────
 BTS_SYSTEM_PROMPT = """You are a viral YouTube Shorts scriptwriter for a top-tier BTS (Bangtan Sonyeondan) & ARMY channel.
 
 Your goal is to write a high-retention 15–30 second YouTube Short script EXCLUSIVELY about BTS or its members: RM (Kim Namjoon), Jin (Kim Seokjin), SUGA (Min Yoongi / Agust D), J-Hope (Jung Hoseok), Jimin (Park Jimin), V (Kim Taehyung), or Jungkook (Jeon Jungkook).
@@ -96,15 +81,17 @@ CRITICAL GUARDRAIL:
 You MUST ONLY write about BTS. NEVER generate content about any other unrelated topic. Every script must be 100% focused on BTS milestones, records, member moments, or ARMY history.
 
 HARD RULES:
-1. Total word count: 45–65 words ONLY.
-2. Sentence 1 MUST be an irresistible viral hook (pattern interrupt / curiosity gap). Example: "Did you know BTS broke a world record that no music group has ever touched..." or "The heartwarming reason Jin made this secret promise to ARMY..."
-3. Short, high-energy sentences (max 10-12 words per sentence).
-4. Final sentence MUST be a high-conversion subscriber CTA: "Subscribe for daily BTS updates and ARMY facts! 💜"
-5. For EVERY sentence in the narration, provide 2-3 visual search keywords suitable for stock video / concert visuals (e.g., ["stadium concert crowd purple", "kpop stage lights"]).
+1. Total narration word count: 45–65 words ONLY.
+2. Open on the specific surprising detail or unresolved question in the supplied story. No greeting, channel intro, or generic "Did you know?" opener.
+3. Use only the supplied headline and RSS excerpt. Never invent numbers, quotes, dates, motives, records, or member statements. Attribute claims to the named publisher when appropriate.
+4. Use a compact story arc: hook, useful context, payoff. End on a specific viewer question that invites a real fan perspective. Do not spend narration time saying "subscribe".
+5. Provide 2-3 original graphic ideas for every sentence. Do not request BTS photos, logos, concert clips, music videos, or other copyrighted media.
 
 Output MUST be in raw JSON (no markdown fences):
 {
-  "hook_text": "<3-5 word intriguing BTS video overlay title>",
+  "hook_text": "<specific 3-5 word hook, no unsupported claim>",
+  "title": "<clear, accurate title under 60 characters>",
+  "viewer_question": "<specific, answerable question tied to this story>",
   "narration": "<complete narration text>",
   "sentences": [
     {
@@ -209,18 +196,16 @@ def generate_viral_script(
             art_title = source_content.get("title", "BTS News Update")
             art_desc = source_content.get("description", "")
             user_prompt = (
-                f"Write a viral YouTube Short script based on this real breaking BTS news article:\n"
-                f"Article Headline: {art_title}\n"
-                f"Article Details: {art_desc}\n\n"
-                f"HARD RULES:\n"
-                f"1. Hook sentence (Sentence 1) MUST feature the headline or shocking achievement from this article.\n"
-                f"2. Keep narration to 45-65 words total.\n"
-                f"3. Final sentence MUST be: 'Subscribe for daily BTS updates and ARMY facts! 💜'\n"
-                f"4. Provide visual search keywords for each sentence matching the article details."
+                "Create one source-bound BTS Short from this RSS item. It is one publisher's report, not independently verified. "
+                "The RSS excerpt may be incomplete. State only details directly supported by it, attribute the report, and do not fill gaps from memory. "
+                "Make the first line instantly specific, build curiosity without misleading, and deliver a satisfying answer before the final viewer question. "
+                f"Publisher: {source_content.get('source', 'Unknown')}\n"
+                f"Published: {source_content.get('published_at', 'date unavailable')}\n"
+                f"Headline: {art_title}\nRSS excerpt: {art_desc}\n"
+                f"Source URL: {source_content.get('article_url', '')}"
             )
         else:
-            topic_str = topic or random.choice(BTS_TOPIC_POOL)
-            user_prompt = f"Write a viral YouTube Short script exclusively about BTS topic: '{topic_str}'."
+            raise ValueError("BTS scripts require a current source item; topic-only generation is disabled.")
         system_prompt = BTS_SYSTEM_PROMPT
     elif niche == "real_estate":
         topic_str = topic or "5 Secrets of $100 Million Mega Mansions"
@@ -239,18 +224,25 @@ def generate_viral_script(
         if parsed and "narration" in parsed:
             # Enforce BTS relevance guardrail
             if niche == "bts" and not is_bts_content(parsed):
-                logger.warning("Generated script failed BTS relevance check! Rejecting non-BTS content.")
-                return get_fallback_script("bts", topic)
+                raise ValueError("Generated script failed the BTS relevance check")
 
             narration = parsed["narration"].strip()
             words = narration.split()
+            if niche == "bts" and not 45 <= len(words) <= 65:
+                raise ValueError(f"Generated BTS narration has {len(words)} words; expected 45-65")
+            if niche == "bts" and (not parsed.get("title") or len(parsed["title"].strip()) > 60):
+                raise ValueError("Generated BTS title is missing or exceeds 60 characters")
+            if niche == "bts" and not parsed.get("viewer_question", "").strip():
+                raise ValueError("Generated BTS script is missing its story-specific viewer question")
             parsed["word_count"] = len(words)
             parsed["niche"] = niche
             logger.info(f"Generated BTS viral script ({len(words)} words): {narration[:60]}...")
             return parsed
 
     except Exception as e:
-        logger.warning(f"Gemini API generation unavailable ({e}). Using offline BTS viral script.")
+        if niche == "bts":
+            raise RuntimeError(f"BTS script generation failed; refusing to publish an unsupported fallback: {e}") from e
+        logger.warning(f"Gemini API generation unavailable ({e}). Using offline fallback script.")
 
     return get_fallback_script(niche, topic)
 
@@ -356,7 +348,7 @@ _BTS_FALLBACK_TEMPLATES = [
 def get_fallback_script(niche: str = "bts", topic: Optional[str] = None) -> dict:
     """Offline high-converting script template when AI API is unconfigured/offline."""
     if niche == "bts":
-        return random.choice(_BTS_FALLBACK_TEMPLATES)
+        raise RuntimeError("There is no safe generic BTS fallback. Provide a recent source item.")
     elif niche == "real_estate":
         return {
             "hook_text": "Inside $100M Mega Mansion",

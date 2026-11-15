@@ -224,10 +224,12 @@ def build_video(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     hook_text = "LUXURY REAL ESTATE"
+    niche = "bts"
     if script_path.exists():
         with open(script_path, encoding="utf-8") as f:
             script_data = json.load(f)
             hook_text = script_data.get("hook_text", hook_text)
+            niche = script_data.get("niche", "bts")
 
     wrapped_hook = textwrap.fill(hook_text.upper(), width=14)
     hook_text_path = output_dir / "hook_text.txt"
@@ -255,7 +257,7 @@ def build_video(
     font_path = cfg.get("caption_font", DEFAULT_FONT)
 
     badge_path = Path(SUBSCRIBE_BADGE_PATH)
-    if not badge_path.exists():
+    if niche != "bts" and not badge_path.exists():
         from src.generate_assets import ensure_assets
         ensure_assets()
 
@@ -268,7 +270,7 @@ def build_video(
         hook_text_path=hook_text_path,
         font_path=font_path,
         scenes_meta=scenes_meta,
-        subscribe_badge_exists=badge_path.exists(),
+        subscribe_badge_exists=badge_path.exists() and niche != "bts",
         logo_exists=logo_path.exists(),
         bgm_exists=bgm_path.exists(),
     )

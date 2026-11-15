@@ -11,12 +11,6 @@ on:
         default: "false"
         type: choice
         options: ["true", "false"]
-      niche:
-        description: "Select Niche"
-        required: false
-        default: "bts"
-        type: choice
-        options: ["bts", "real_estate", "space"]
       topic:
         description: "Custom Topic Prompt (optional)"
         required: false
@@ -68,26 +62,20 @@ jobs:
 
       - name: "🚀 Run Viral Shorts Pipeline"
         env:
-          NASA_API_KEY: ${{ secrets.NASA_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           YOUTUBE_CREDENTIALS_JSON: ${{ secrets.YOUTUBE_CREDENTIALS_JSON }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           DRY_RUN_FLAG=""
-          NICHE_FLAG="--niche bts"
           TOPIC_FLAG=""
 
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             DRY_RUN_FLAG="--dry-run"
           fi
-          if [ -n "${{ github.event.inputs.niche }}" ]; then
-            NICHE_FLAG="--niche ${{ github.event.inputs.niche }}"
-          fi
           if [ -n "${{ github.event.inputs.topic }}" ]; then
             TOPIC_FLAG="--topic '${{ github.event.inputs.topic }}'"
           fi
 
-          python main.py $DRY_RUN_FLAG $NICHE_FLAG $TOPIC_FLAG
+          python main.py $DRY_RUN_FLAG --niche bts $TOPIC_FLAG
 
       - name: "📎 Upload debug artifacts"
         if: always()
@@ -110,5 +98,5 @@ jobs:
           echo "::error::Common resolutions:"
           echo "::error::  1. Add 'GEMINI_API_KEY' to GitHub Repo Secrets (Settings -> Secrets -> Actions)"
           echo "::error::  2. Add 'YOUTUBE_CREDENTIALS_JSON' (Base64 JSON of YouTube OAuth2 token)"
-          echo "::error::  3. Optional: Add 'PEXELS_API_KEY' for automatic 9:16 HD stock video fetching"
+          echo "::error::  3. The workflow only publishes when a recent BTS source item and valid Gemini script are available."
           echo "::error::Run locally to test: python main.py --dry-run"
