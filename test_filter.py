@@ -21,7 +21,6 @@ fstr, vlabel, alabel = _build_filter_complex(
     scenes_meta=[],
     subscribe_badge_exists=False,
     logo_exists=False,
-    bgm_exists=False,
 )
 
 print(f"Filter string length : {len(fstr):,} chars")

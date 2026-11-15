@@ -2,7 +2,7 @@
 
 > **A BTS-focused YouTube Shorts pipeline built to run on GitHub Actions using free-tier services.** Free quotas, API eligibility, and service terms can change; this project cannot guarantee $0 operation forever or guarantee viral reach.
 
-Inspired by **[MoneyPrinterTurbo](https://github.com/harry0703/MoneyPrinterTurbo.git)** (viral psychological hooks, sentence-by-sentence visual alignment, audio ducking BGM) and **[Remotion](https://github.com/remotion-dev/remotion.git)** (dynamic word-by-word karaoke captions, animated subscribe conversion overlays, video progress bars).
+Inspired by **[MoneyPrinterTurbo](https://github.com/harry0703/MoneyPrinterTurbo.git)** (viral psychological hooks and sentence-by-sentence visual alignment) and **[Remotion](https://github.com/remotion-dev/remotion.git)** (dynamic word-by-word karaoke captions, animated subscribe conversion overlays, video progress bars).
 
 ---
 
@@ -32,9 +32,10 @@ This pipeline is strictly locked to **BTS only**:
   - **Dynamic Karaoke Subtitles**: Word-by-word active highlighting with drop shadows.
   - **Animated SUBSCRIBE Conversion Badge**: Pop-up banner driving casual viewers to subscribe.
   - **Top Progress Bar Overlay**: Visual indicator keeping viewers watching until the end.
-- 🎵 **Background Audio & Ducking**: Speech narration smoothly blended with ambient music.
+- **Narration-only audio**: The finished video contains generated speech without background music.
 - **Source-linked metadata:** Generates a concise title, a few relevant hashtags, a source link, and a story-specific viewer question in the description.
 - 💬 **Automated Comment Replies**: Automatically engages with fans and answers comments in a warm ARMY persona.
+- **Article-matched opening visual**: Uses the image advertised by the selected article Open Graph/Twitter metadata when available; generated editorial cards are the fallback.
 
 ---
 
@@ -42,8 +43,8 @@ This pipeline is strictly locked to **BTS only**:
 
 ```
 1. src/generate_script.py   -> Groq BTS script + strict BTS relevance guardrail
-2. src/fetch_content.py     -> Original editorial cards for BTS stories
-3. src/generate_audio.py    -> gTTS voiceover + WebVTT karaoke timestamps + BGM
+2. src/fetch_content.py     -> Article preview image + original editorial cards for BTS stories
+3. src/generate_audio.py    -> gTTS voiceover + WebVTT karaoke timestamps
 4. src/build_video.py       -> FFmpeg video compositor (karaoke text, subscribe badge, progress bar)
 5. src/generate_metadata.py -> Source-linked title, hashtags, and viewer question
 6. src/upload_video.py      -> Direct YouTube Data API v3 upload

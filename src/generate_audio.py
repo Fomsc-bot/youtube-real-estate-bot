@@ -3,7 +3,6 @@ generate_audio.py — Step 3 of YouTube Shorts Pipeline
 
 Converts narration script to high-clarity speech using gTTS.
 Builds word-level WebVTT timestamps for Remotion karaoke subtitles.
-Prepares background music (BGM) track for audio ducking mix in build_video.py.
 
 Usage:
     python src/generate_audio.py --script output/script.json
@@ -13,10 +12,8 @@ Usage:
 import argparse
 import json
 import logging
-import math
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 from gtts import gTTS
 
@@ -113,10 +110,9 @@ def generate_audio(
     script_path: Path,
     output_dir: Path,
     voice: str = DEFAULT_VOICE,
-    bgm_path: Optional[Path] = None,
 ) -> dict:
     """
-    Generate audio narration, WebVTT karaoke timestamps, and locate BGM audio.
+    Generate speech narration and WebVTT karaoke timestamps.
     """
     with open(script_path, encoding="utf-8") as f:
         script_data = json.load(f)
@@ -134,14 +130,9 @@ def generate_audio(
 
     _generate_vtt_timestamps(narration, duration, vtt_path)
 
-    # Locate ambient background music
-    if not bgm_path:
-        bgm_path = Path("assets/bgm/ambient_viral.mp3")
-
     result = {
         "mp3_path": str(mp3_path),
         "vtt_path": str(vtt_path),
-        "bgm_path": str(bgm_path) if bgm_path.exists() else None,
         "duration_seconds": round(duration, 3),
         "voice": voice,
         "narration": narration,
@@ -182,15 +173,12 @@ def _dry_run(output_dir: Path) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     mp3_path = output_dir / "narration.mp3"
     vtt_path = output_dir / "narration.vtt"
-    bgm_path = Path("assets/bgm/ambient_viral.mp3")
-
     mp3_path.write_bytes(b"")
     vtt_path.write_text(_DRY_RUN_VTT, encoding="utf-8")
 
     result = {
         "mp3_path": str(mp3_path),
         "vtt_path": str(vtt_path),
-        "bgm_path": str(bgm_path) if bgm_path.exists() else None,
         "duration_seconds": 22.0,
         "voice": DEFAULT_VOICE,
         "narration": "Dry run narration audio.",

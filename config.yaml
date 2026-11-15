@@ -39,9 +39,7 @@ audio:
   voice_id: "en"
   voice_speed: 1.05 # Slightly faster pacing for viral engagement
   audio_bitrate: "128k"
-  bgm_enabled: true
-  bgm_volume: 0.15 # Background music ducking volume relative to speech
-  bgm_default: "assets/bgm/ambient_viral.mp3"
+  narration_only: true
 
 video:
   # Output resolution (9:16 vertical for Shorts)

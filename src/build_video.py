@@ -7,7 +7,7 @@ Assembles a viral 9:16 YouTube Short:
   3. Hook text banner overlay (first 2.5s)
   4. Animated YouTube "SUBSCRIBE" conversion badge popup during CTA
   5. Top/bottom video duration progress bar
-  6. Speech voiceover + Background music (BGM) ducking audio mix
+  6. Clean speech-only audio track
 
 Usage:
     python src/build_video.py --output output/final_video.mp4
@@ -43,8 +43,6 @@ DEFAULT_FONT = "assets/fonts/Montserrat-Bold.ttf"
 FALLBACK_FONT = "DejaVuSans-Bold"
 SUBSCRIBE_BADGE_PATH = "assets/subscribe_badge.png"
 LOGO_PATH = "assets/logo.png"
-BGM_SAMPLE_RATE = 44100
-BGM_DURATION_SECONDS = 30
 
 
 def parse_vtt(vtt_path: Path) -> List[dict]:
@@ -85,11 +83,10 @@ def _build_filter_complex(
     scenes_meta: List[dict],
     subscribe_badge_exists: bool,
     logo_exists: bool,
-    bgm_exists: bool,
 ) -> tuple[str, str, str]:
     """
     Build complete FFmpeg filtergraph string including multi-scene visuals,
-    karaoke captions, subscribe popup, progress bar, and BGM audio mix.
+    karaoke captions, subscribe popup, progress bar, and narration audio.
     """
     filters = []
     
@@ -196,20 +193,9 @@ def _build_filter_complex(
         filters.append(f"[{current_label}]null[v_final]")
         final_video_label = "v_final"
 
-    # ── 7. Audio Ducking Filter Complex (Voice + BGM Mix) ──
-    if bgm_exists:
-        bgm_input_idx = input_idx if not logo_exists else input_idx + 1
-        filters.append(
-            f"[1:a]volume=1.0[a_voice];"
-            # `aloop:size` is an integer sample count, not a scientific-notation
-            # expression. The generated ambient track is 30 s at 44.1 kHz.
-            f"[{bgm_input_idx}:a]volume=0.15,aloop=loop=-1:size={BGM_SAMPLE_RATE * BGM_DURATION_SECONDS}[a_bgm];"
-            f"[a_voice][a_bgm]amix=inputs=2:duration=first:dropout_transition=2[a_final]"
-        )
-        final_audio_label = "a_final"
-    else:
-        filters.append("[1:a]volume=1.0[a_final]")
-        final_audio_label = "a_final"
+    # Keep the exported soundtrack voice-only; no music input is added.
+    filters.append("[1:a]volume=1.0[a_final]")
+    final_audio_label = "a_final"
 
     return ";".join(filters), final_video_label, final_audio_label
 
@@ -248,13 +234,10 @@ def build_video(
 
     audio_meta_path = output_dir / "audio_meta.json"
     audio_duration = 20.0
-    bgm_path_str = "assets/bgm/ambient_viral.mp3"
     if audio_meta_path.exists():
         with open(audio_meta_path, encoding="utf-8") as f:
             ameta = json.load(f)
             audio_duration = ameta.get("duration_seconds", 20.0)
-            if ameta.get("bgm_path"):
-                bgm_path_str = ameta.get("bgm_path")
 
     total_duration = min(audio_duration + 0.5, 58.0)
     words = parse_vtt(vtt_path)
@@ -267,7 +250,6 @@ def build_video(
     badge_enabled = badge_path.exists() and niche != "bts"
 
     logo_path = Path(cfg.get("logo_path", LOGO_PATH))
-    bgm_path = Path(bgm_path_str)
 
     filter_str, final_v_label, final_a_label = _build_filter_complex(
         words=words,
@@ -277,7 +259,6 @@ def build_video(
         scenes_meta=scenes_meta,
         subscribe_badge_exists=badge_enabled,
         logo_exists=logo_path.exists(),
-        bgm_exists=bgm_path.exists(),
     )
 
     scene_files = sorted(list((output_dir / "scenes").glob("scene_*.jpg")))
@@ -333,9 +314,6 @@ def build_video(
 
     if logo_path.exists():
         cmd += ["-i", str(logo_path.resolve())]
-
-    if bgm_path.exists():
-        cmd += ["-i", str(bgm_path.resolve())]
 
     cmd += [
         "-filter_complex_script", filter_script_path,

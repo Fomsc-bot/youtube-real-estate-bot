@@ -25,7 +25,8 @@ from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Optional, List
-from urllib.parse import quote
+from urllib.parse import quote, urljoin
+from html.parser import HTMLParser
 
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -317,8 +318,8 @@ BTS_NEWS_FEEDS = [
 
 def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
     """
-    Select the newest usable headline/excerpt from free BTS RSS feeds.
-    Do not download publisher photos: create original editorial graphics instead.
+    Select the newest usable headline/excerpt from free BTS RSS feeds and fetch
+    its publisher preview image for the opening scene when one is available.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     import xml.etree.ElementTree as ET
@@ -357,8 +358,97 @@ def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
         return None
     candidates.sort(key=lambda item: item["published_at"], reverse=True)
     selected = candidates[0]
+    local_image = fetch_article_preview_image(selected["article_url"], output_dir)
+    if local_image:
+        selected["local_image_path"] = str(local_image)
     logger.info(f"Selected newest source item: {selected['title'][:100]} ({selected['article_url']})")
     return selected
+
+
+class _ArticlePreviewParser(HTMLParser):
+    """Read social preview image URLs from common article metadata tags."""
+
+    def __init__(self):
+        super().__init__()
+        self.image_url = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() != "meta":
+            return
+        values = {key.lower(): value for key, value in attrs if key and value}
+        property_name = (values.get("property") or values.get("name") or "").lower()
+        if property_name in {"og:image", "og:image:url", "twitter:image", "twitter:image:src"}:
+            if values.get("content"):
+                self.image_url = values["content"].strip()
+
+
+def fetch_article_preview_image(article_url: str, output_dir: Path) -> Optional[Path]:
+    """Download and format the image advertised by an article's social metadata."""
+    try:
+        page = requests.get(article_url, headers=HTTP_HEADERS, timeout=15)
+        page.raise_for_status()
+        parser = _ArticlePreviewParser()
+        parser.feed(page.text)
+        if not parser.image_url:
+            logger.warning("Article page did not provide an Open Graph or Twitter image.")
+            return None
+
+        image_url = urljoin(page.url, parser.image_url)
+        if not image_url.startswith(("https://", "http://")):
+            logger.warning("Ignoring unsupported article image URL scheme.")
+            return None
+
+        response = requests.get(image_url, headers=HTTP_HEADERS, timeout=20, stream=True)
+        response.raise_for_status()
+        max_bytes = 15 * 1024 * 1024
+        chunks = []
+        size = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            size += len(chunk)
+            if size > max_bytes:
+                raise ValueError("Article image exceeds the 15 MB download limit")
+            chunks.append(chunk)
+
+        image_bytes = b"".join(chunks)
+        with Image.open(BytesIO(image_bytes)) as image:
+            original = image.convert("RGB")
+        dest_path = output_dir / "article_image.jpg"
+        _format_vertical_editorial_image(original, dest_path)
+        logger.info(f"Downloaded and formatted article preview image -> {dest_path}")
+        return dest_path
+    except Exception as error:
+        logger.warning(f"Could not fetch article preview image: {error}")
+        return None
+
+
+def _format_vertical_editorial_image(original: Image.Image, dest_path: Path) -> None:
+    """Fit an article photo into a vertical frame without cropping its subject."""
+    width, height = original.size
+    bg_scale = max(1080 / width, 1920 / height)
+    bg_size = (int(width * bg_scale), int(height * bg_scale))
+    background = original.resize(bg_size, Image.Resampling.LANCZOS)
+    left = (bg_size[0] - 1080) // 2
+    top = (bg_size[1] - 1920) // 2
+    background = background.crop((left, top, left + 1080, top + 1920))
+    background = background.filter(ImageFilter.GaussianBlur(radius=28))
+    tint = Image.new("RGBA", (1080, 1920), (35, 10, 50, 105))
+    background = Image.alpha_composite(background.convert("RGBA"), tint).convert("RGB")
+
+    foreground_scale = min(1000 / width, 1050 / height)
+    foreground_size = (int(width * foreground_scale), int(height * foreground_scale))
+    foreground = original.resize(foreground_size, Image.Resampling.LANCZOS)
+    x = (1080 - foreground_size[0]) // 2
+    y = 270 + (1050 - foreground_size[1]) // 2
+    background.paste(foreground, (x, y))
+    draw = ImageDraw.Draw(background)
+    draw.rectangle(
+        [x - 4, y - 4, x + foreground_size[0] + 4, y + foreground_size[1] + 4],
+        outline=(244, 208, 63), width=5,
+    )
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    background.save(dest_path, "JPEG", quality=94)
 
 
 def fetch_multi_scene_content(
@@ -393,7 +483,9 @@ def fetch_multi_scene_content(
         fetched_path = None
         media_type = "image"
 
-        # 0. If article image is available, use it for the opening hook scene!
+        is_bts = script_data.get("niche", "bts") == "bts"
+
+        # Use the publisher image for the opening BTS scene when available.
         if i == 0 and source_content and source_content.get("local_image_path"):
             art_img = Path(source_content["local_image_path"])
             if art_img.exists():
@@ -403,10 +495,9 @@ def fetch_multi_scene_content(
                 media_type = "image"
                 logger.info(f"Using direct article image for scene {i} -> {image_dest}")
 
-        is_bts = script_data.get("niche", "bts") == "bts"
-
-        # BTS videos use original editorial cards; do not imply third-party footage is official.
-        if is_bts:
+        # Use original editorial cards for remaining BTS scenes; do not imply
+        # unrelated stock imagery is BTS footage.
+        if is_bts and not fetched_path:
             fetched_path = create_fallback_scene_image(text, kw, image_dest)
             media_type = "image"
 
