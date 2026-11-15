@@ -336,7 +336,21 @@ def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
             for item in root.findall(".//item")[:12]:
                 title = unescape((item.findtext("title") or "").strip())
                 link = (item.findtext("link") or "").strip()
-                excerpt = unescape(re.sub(r"<[^>]+>", " ", item.findtext("description") or ""))
+                raw_description = item.findtext("description") or ""
+                image_match = re.search(
+                    r"<img\b[^>]*\bsrc=[\"']([^\"']+)[\"']",
+                    raw_description,
+                    re.IGNORECASE,
+                )
+                image_url = image_match.group(1) if image_match else None
+                if not image_url:
+                    for media in item.iter():
+                        local_tag = media.tag.rsplit("}", 1)[-1].lower()
+                        candidate_url = media.attrib.get("url") or media.attrib.get("href")
+                        if local_tag in {"content", "thumbnail", "enclosure"} and candidate_url:
+                            image_url = candidate_url
+                            break
+                excerpt = unescape(re.sub(r"<[^>]+>", " ", raw_description))
                 excerpt = re.sub(r"\s+", " ", excerpt).strip()[:1200]
                 pub_text = item.findtext("pubDate") or ""
                 if not title or not link:
@@ -350,7 +364,8 @@ def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
                 if not re.search(r"\b(BTS|Bangtan|Jungkook|Jimin|Jin|Suga|Yoongi|RM|Namjoon|J-Hope|Hobi|V|Taehyung)\b", title, re.I):
                     continue
                 candidates.append({"title": title, "description": excerpt, "article_url": link,
-                    "published_at": published.isoformat(), "source": "Soompi"})
+                    "published_at": published.isoformat(), "source": "Soompi",
+                    "article_image_url": image_url})
         except Exception as error:
             logger.warning(f"Could not read BTS RSS feed {feed_url}: {error}")
 
@@ -358,7 +373,10 @@ def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
         return None
     candidates.sort(key=lambda item: item["published_at"], reverse=True)
     selected = candidates[0]
-    local_image = fetch_article_preview_image(selected["article_url"], output_dir)
+    local_image = fetch_article_preview_image(
+        selected["article_url"], output_dir,
+        rss_image_url=selected.get("article_image_url"),
+    )
     if local_image:
         selected["local_image_path"] = str(local_image)
     logger.info(f"Selected newest source item: {selected['title'][:100]} ({selected['article_url']})")
@@ -382,18 +400,29 @@ class _ArticlePreviewParser(HTMLParser):
                 self.image_url = values["content"].strip()
 
 
-def fetch_article_preview_image(article_url: str, output_dir: Path) -> Optional[Path]:
+def fetch_article_preview_image(
+    article_url: str,
+    output_dir: Path,
+    rss_image_url: Optional[str] = None,
+) -> Optional[Path]:
     """Download and format the image advertised by an article's social metadata."""
+    image_url = rss_image_url
     try:
         page = requests.get(article_url, headers=HTTP_HEADERS, timeout=15)
         page.raise_for_status()
         parser = _ArticlePreviewParser()
         parser.feed(page.text)
-        if not parser.image_url:
-            logger.warning("Article page did not provide an Open Graph or Twitter image.")
-            return None
+        if parser.image_url:
+            image_url = urljoin(page.url, parser.image_url)
+    except Exception as error:
+        logger.warning(f"Could not read article social image metadata: {error}")
 
-        image_url = urljoin(page.url, parser.image_url)
+    if not image_url:
+        logger.warning("Article page and RSS item did not provide a preview image.")
+        return None
+
+    try:
+        image_url = urljoin(article_url, image_url)
         if not image_url.startswith(("https://", "http://")):
             logger.warning("Ignoring unsupported article image URL scheme.")
             return None
@@ -435,13 +464,22 @@ def fetch_multi_scene_content(
     source_content: Optional[dict] = None,
 ) -> List[dict]:
     """
-    Fetch / generate scene visual clips matching every sentence in the script.
-    Prefers real BTS photos -> Pexels video -> procedural graphics fallback.
+    Assign the selected article image to every BTS sentence scene. Other niches
+    retain their existing stock/procedural visual behavior.
     """
     scenes_dir = output_dir / "scenes"
     scenes_dir.mkdir(parents=True, exist_ok=True)
 
     pexels_key = os.environ.get("PEXELS_API_KEY", "").strip()
+    is_bts = script_data.get("niche", "bts") == "bts"
+    article_image_path = None
+    if is_bts and source_content and source_content.get("local_image_path"):
+        candidate = Path(source_content["local_image_path"])
+        if candidate.is_file():
+            article_image_path = candidate
+    if is_bts and not article_image_path:
+        raise RuntimeError("A downloaded article image is required for BTS scenes.")
+
     sentences = script_data.get("sentences", [])
 
     if not sentences:
@@ -461,34 +499,8 @@ def fetch_multi_scene_content(
         fetched_path = None
         media_type = "image"
 
-        is_bts = script_data.get("niche", "bts") == "bts"
-
-        # Use the publisher image for the opening BTS scene when available.
-        if i == 0 and source_content and source_content.get("local_image_path"):
-            art_img = Path(source_content["local_image_path"])
-            if art_img.exists():
-                # Keep the downloaded original untouched. The slideshow concat
-                # requires every frame to have identical 1080x1920 dimensions,
-                # so create a simple fit-and-pad render copy for this scene.
-                with Image.open(art_img) as article_image:
-                    original = article_image.convert("RGB")
-                width, height = original.size
-                fit_scale = min(1080 / width, 1920 / height)
-                fitted = original.resize(
-                    (max(1, int(width * fit_scale)), max(1, int(height * fit_scale))),
-                    Image.Resampling.LANCZOS,
-                )
-                scene_image = Image.new("RGB", (1080, 1920), (25, 10, 40))
-                scene_image.paste(fitted, ((1080 - fitted.width) // 2, (1920 - fitted.height) // 2))
-                scene_image.save(image_dest, "JPEG", quality=95)
-                fetched_path = image_dest
-                media_type = "image"
-                logger.info(f"Using article image in a 1080x1920 scene copy -> {image_dest}")
-
-        # Use original editorial cards for remaining BTS scenes; do not imply
-        # unrelated stock imagery is BTS footage.
-        if is_bts and not fetched_path:
-            fetched_path = create_fallback_scene_image(text, kw, image_dest)
+        if is_bts:
+            fetched_path = article_image_path
             media_type = "image"
 
         # Non-BTS legacy niches may use licensed/authorized external stock.

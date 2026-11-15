@@ -80,6 +80,11 @@ def main(
             try:
                 source_content = fetch_latest_bts_article(output_dir)
                 if source_content:
+                    if not source_content.get("local_image_path"):
+                        raise RuntimeError(
+                            "The selected BTS article did not provide a downloadable image; "
+                            "skipping this upload instead of generating a replacement visual."
+                        )
                     save_json(source_content, output_dir / "article.json")
                     logger.info(f"✅ Article fetched: {source_content['title'][:60]}")
                     logger.info(f"   Source: {source_content.get('article_url', '')[:60]}")
