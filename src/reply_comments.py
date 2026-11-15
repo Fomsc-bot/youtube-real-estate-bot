@@ -3,7 +3,7 @@ reply_comments.py — Step 7 of The Universe pipeline.
 
 Runs ~3 hours after upload (separate GitHub Actions workflow).
 Fetches new comments on the most recently uploaded video,
-generates on-brand replies using Gemini, and posts them.
+generates on-brand replies using Groq, and posts them.
 
 Spam and off-topic comments are skipped automatically.
 
@@ -19,16 +19,11 @@ import logging
 import os
 import random
 import re
+import requests
 import time
 from pathlib import Path
 from typing import Optional
 
-try:
-    from google import genai
-    from google.genai import types as genai_types
-except ImportError:
-    genai = None
-    genai_types = None
 from googleapiclient.errors import HttpError
 try:
     from tenacity import (
@@ -95,14 +90,12 @@ Commenter said: "{comment}"
 Write a warm, enthusiastic BTS / ARMY reply (1–2 sentences, max 30 words)."""
 
 
-def _get_gemini_client():
-    """Create and return a google.genai Client instance."""
-    if genai is None:
-        raise EnvironmentError("google-genai not installed. Run: pip install google-genai")
-    api_key = os.environ.get("GEMINI_API_KEY")
+def _get_groq_api_key() -> str:
+    """Return the Groq API key from the environment."""
+    api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
-        raise EnvironmentError("GEMINI_API_KEY environment variable is not set.")
-    return genai.Client(api_key=api_key)
+        raise EnvironmentError("GROQ_API_KEY environment variable is not set.")
+    return api_key
 
 
 def _is_spam(comment_text: str) -> bool:
@@ -125,30 +118,41 @@ def _is_spam(comment_text: str) -> bool:
     before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
-def _generate_reply(comment_text: str, topic: str, model_name: str = "gemini-2.0-flash-lite") -> str:
-    """Use Gemini (google.genai SDK) to generate an on-brand reply."""
-    client = _get_gemini_client()
+def _generate_reply(comment_text: str, topic: str, model_name: str = "openai/gpt-oss-20b") -> str:
+    """Use Groq chat completions to generate an on-brand reply."""
+    api_key = _get_groq_api_key()
     prompt = REPLY_USER_TEMPLATE.format(topic=topic, comment=comment_text[:300])
-    models_to_try = [model_name, "gemini-2.0-flash", "gemini-1.5-flash"]
+    models_to_try = list(dict.fromkeys([
+        model_name,
+        "openai/gpt-oss-120b",
+    ]))
     last_err = None
     for m in models_to_try:
         try:
-            response = client.models.generate_content(
-                model=m,
-                contents=prompt,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=REPLY_SYSTEM_PROMPT,
-                    temperature=0.6,
-                    max_output_tokens=80,
-                ),
+            response = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": m,
+                    "messages": [
+                        {"role": "system", "content": REPLY_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.6,
+                    "max_completion_tokens": 80,
+                },
+                timeout=60,
             )
-            reply = (response.text or "").strip()
-            logger.info(f"Generated reply via {m}: {reply}")
-            return reply
+            response.raise_for_status()
+            reply = response.json()["choices"][0]["message"]["content"].strip()
+            if reply:
+                logger.info(f"Generated reply via {m}: {reply}")
+                return reply
+            raise RuntimeError(f"Groq model '{m}' returned an empty reply.")
         except Exception as e:
-            logger.warning(f"Gemini model '{m}' failed for reply: {e}")
+            logger.warning(f"Groq model '{m}' failed for reply: {e}")
             last_err = e
-    raise last_err or RuntimeError("All Gemini reply models failed.")
+    raise last_err or RuntimeError("All Groq reply models failed.")
 
 
 
@@ -159,7 +163,7 @@ def fetch_and_reply_comments(
     video_id: str,
     topic: str = "space",
     dry_run: bool = False,
-    model_name: str = "gemini-2.0-flash-lite",
+    model_name: str = "openai/gpt-oss-20b",
 ) -> list[dict]:
     """
     Fetch recent comments on video_id, generate replies, post them.
@@ -252,12 +256,12 @@ def fetch_and_reply_comments(
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(description="Auto-reply to YouTube comments using Gemini.")
+    parser = argparse.ArgumentParser(description="Auto-reply to YouTube comments using Groq.")
     parser.add_argument("--video-id", default=None, help="YouTube video ID to reply to")
     parser.add_argument("--auto", action="store_true",
                         help="Read video ID from output/upload_result.json")
     parser.add_argument("--output", default="output/", help="Directory for upload_result.json")
-    parser.add_argument("--model", default="gemini-2.0-flash-lite")
+    parser.add_argument("--model", default=os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b"))
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 

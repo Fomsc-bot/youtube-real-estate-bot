@@ -6,10 +6,6 @@ google-auth>=2.30.0
 google-auth-oauthlib>=1.2.0
 google-auth-httplib2>=0.2.0
 
-# Google Gemini SDK (script generation + comment replies)
-# NOTE: google-generativeai is deprecated. Using google-genai (new SDK).
-google-genai>=1.0.0
-
 # Image & Data Processing
 Pillow>=10.4.0
 

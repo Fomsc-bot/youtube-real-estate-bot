@@ -83,7 +83,7 @@ video:
 script:
   min_words: 45
   max_words: 70
-  gemini_model: "gemini-2.0-flash-lite"
+  groq_model: "openai/gpt-oss-20b"
 
 metadata:
   privacy_status: "public"

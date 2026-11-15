@@ -1,7 +1,7 @@
 """
 generate_script.py — MoneyPrinterTurbo-style Viral Script Generator
 
-Uses Google Gemini AI to generate viral short-form narration scripts (45–65 words).
+Uses the Groq API to generate short-form narration scripts (45–65 words).
 Optimized for BTS (Bangtan Sonyeondan) spotlight, records, member milestones & ARMY moments.
 
 Key features (MoneyPrinterTurbo Architecture):
@@ -15,7 +15,7 @@ Usage:
     python src/generate_script.py --niche bts
     python src/generate_script.py --niche bts --dry-run
 
-Note: Uses google-genai SDK (google.genai), NOT the deprecated google-generativeai.
+Groq uses its OpenAI-compatible chat completions endpoint and the existing requests dependency.
 """
 
 import argparse
@@ -24,16 +24,10 @@ import logging
 import os
 import random
 import re
+import requests
 import sys
 from pathlib import Path
 from typing import Optional
-
-try:
-    from google import genai
-    from google.genai import types as genai_types
-except ImportError:
-    genai = None
-    genai_types = None
 
 try:
     from tenacity import (
@@ -64,6 +58,9 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("generate_script")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b"
+GROQ_MODEL_FALLBACKS = ["openai/gpt-oss-120b"]
 
 # ── BTS Relevance Guardrail Keywords ──────────────────────────────────────────
 BTS_KEYWORDS = [
@@ -129,50 +126,52 @@ def is_bts_content(script_data: dict) -> bool:
     return False
 
 
-def _get_gemini_client():
-    """Create and return a google.genai Client instance."""
-    if genai is None:
-        raise EnvironmentError("google-genai module not installed. Run: pip install google-genai")
-    api_key = os.environ.get("GEMINI_API_KEY")
+def _get_groq_api_key() -> str:
+    """Return the Groq API key from the environment."""
+    api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
-        raise EnvironmentError("GEMINI_API_KEY environment variable is not set.")
-    return genai.Client(api_key=api_key)
+        raise EnvironmentError("GROQ_API_KEY environment variable is not set.")
+    return api_key
 
 
-def _call_gemini(system_prompt: str, user_prompt: str) -> str:
-    """Call Gemini with multi-model automatic failover using google.genai SDK."""
-    models_to_try = [
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
-        "gemini-2.0-flash-lite-preview-02-05",
-        "gemini-2.0-pro-exp-02-05",
-    ]
-    client = _get_gemini_client()
+def _call_groq(system_prompt: str, user_prompt: str) -> str:
+    """Call Groq chat completions with a supported JSON-capable model."""
+    api_key = _get_groq_api_key()
+    preferred_model = os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL).strip()
+    models_to_try = list(dict.fromkeys([preferred_model, *GROQ_MODEL_FALLBACKS]))
     last_err = None
 
     for model_name in models_to_try:
         try:
-            logger.info(f"Calling Gemini model: {model_name} ...")
-            response = client.models.generate_content(
-                model=model_name,
-                contents=user_prompt,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    temperature=0.7,
-                    max_output_tokens=512,
-                    response_mime_type="application/json",
-                ),
+            logger.info(f"Calling Groq model: {model_name} ...")
+            response = requests.post(
+                GROQ_API_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": model_name,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.7,
+                    "max_completion_tokens": 1024,
+                    "response_format": {"type": "json_object"},
+                    "reasoning_format": "hidden",
+                },
+                timeout=90,
             )
-            text = response.text.strip() if response.text else ""
+            response.raise_for_status()
+            text = response.json()["choices"][0]["message"]["content"].strip()
             if text:
                 return text
-        except Exception as e:
-            logger.warning(f"Gemini model '{model_name}' failed: {e}. Trying fallback model...")
+            raise RuntimeError(f"Groq model '{model_name}' returned an empty response.")
+        except (requests.RequestException, KeyError, IndexError, TypeError, ValueError, RuntimeError) as e:
+            logger.warning(f"Groq model '{model_name}' failed: {e}. Trying fallback model...")
             last_err = e
 
     if last_err:
         raise last_err
-    raise RuntimeError("All Gemini model attempts failed.")
+    raise RuntimeError("All Groq model attempts failed.")
 
 
 def _parse_json_response(raw: str) -> dict:
@@ -181,7 +180,7 @@ def _parse_json_response(raw: str) -> dict:
     try:
         return json.loads(raw)
     except Exception as e:
-        logger.error(f"Failed to parse Gemini response as JSON: {e}")
+        logger.error(f"Failed to parse Groq response as JSON: {e}")
         return {}
 
 
@@ -217,8 +216,8 @@ def generate_viral_script(
         system_prompt = SPACE_SYSTEM_PROMPT
 
     try:
-        _get_gemini_client()
-        raw = _call_gemini(system_prompt, user_prompt)
+        _get_groq_api_key()
+        raw = _call_groq(system_prompt, user_prompt)
         parsed = _parse_json_response(raw)
 
         if parsed and "narration" in parsed:
@@ -242,7 +241,7 @@ def generate_viral_script(
     except Exception as e:
         if niche == "bts":
             raise RuntimeError(f"BTS script generation failed; refusing to publish an unsupported fallback: {e}") from e
-        logger.warning(f"Gemini API generation unavailable ({e}). Using offline fallback script.")
+        logger.warning(f"Groq API generation unavailable ({e}). Using offline fallback script.")
 
     return get_fallback_script(niche, topic)
 

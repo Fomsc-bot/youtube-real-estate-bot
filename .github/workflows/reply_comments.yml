@@ -56,7 +56,8 @@ jobs:
       # ── 5. Run comment reply module ────────────────────────────────────────
       - name: "💬 Post Comment Replies"
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: openai/gpt-oss-20b
           YOUTUBE_CREDENTIALS_JSON: ${{ secrets.YOUTUBE_CREDENTIALS_JSON }}
         run: |
           VIDEO_ID_FLAG=""

@@ -10,7 +10,7 @@ Inspired by **[MoneyPrinterTurbo](https://github.com/harry0703/MoneyPrinterTurbo
 
 This pipeline is strictly locked to **BTS only**:
 - **Topic Scope:** Only BTS (Bangtan Sonyeondan) group achievements, Guinness World Records, Billboard milestones, album eras (*Love Yourself, Map of the Soul, BE, Proof*), and member updates for **RM (Kim Namjoon), Jin (Kim Seokjin), SUGA (Min Yoongi / Agust D), J-Hope (Jung Hoseok), Jimin (Park Jimin), V (Kim Taehyung), and Jungkook (Jeon Jungkook)**.
-- **Source and relevance checks:** Scheduled BTS scripts require a recent RSS story, a valid Gemini response, and a BTS relevance check. If a source or script is unavailable, the run fails instead of recycling an old claim.
+- **Source and relevance checks:** Scheduled BTS scripts require a recent RSS story, a valid Groq response, and a BTS relevance check. If a source or script is unavailable, the run fails instead of recycling an old claim.
 
 ---
 
@@ -20,7 +20,7 @@ This pipeline is strictly locked to **BTS only**:
 - ❌ **No database:** No PostgreSQL, MySQL, Redis, or Prisma required.
 - ❌ **No Telegram bot:** Clean, standard GitHub Actions run logs and artifact tracking.
 - **No project database or Docker required** for this Python scheduled workflow.
-- Uses GitHub-hosted Actions runners, Gemini API, gTTS, FFmpeg, Pillow, and YouTube Data API. These have free tiers or no direct charge, subject to current quotas, eligibility, and terms.
+- Uses GitHub-hosted Actions runners, Groq API, gTTS, FFmpeg, Pillow, and YouTube Data API. These have free tiers or no direct charge, subject to current quotas, eligibility, and terms.
 
 ---
 
@@ -41,7 +41,7 @@ This pipeline is strictly locked to **BTS only**:
 ## 📡 Pipeline Architecture
 
 ```
-1. src/generate_script.py   -> Gemini AI BTS script + strict BTS relevance guardrail
+1. src/generate_script.py   -> Groq BTS script + strict BTS relevance guardrail
 2. src/fetch_content.py     -> Original editorial cards for BTS stories
 3. src/generate_audio.py    -> gTTS voiceover + WebVTT karaoke timestamps + BGM
 4. src/build_video.py       -> FFmpeg video compositor (karaoke text, subscribe badge, progress bar)
@@ -58,7 +58,7 @@ Add these to your **GitHub Repository Secrets** (Settings → Secrets and variab
 
 | Secret Name | Required? | Used for |
 | :--- | :--- | :--- |
-| `GEMINI_API_KEY` | **Required** | Source-bound script generation. Gemini quotas and free-tier terms apply. |
+| `GROQ_API_KEY` | **Required** | Source-bound scripts and comment replies. Groq free-tier rate limits apply. |
 | `YOUTUBE_CREDENTIALS_JSON` | **Required** | Base64-encoded YouTube OAuth2 credentials for publishing. |
 
 ---

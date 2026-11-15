@@ -62,7 +62,8 @@ jobs:
 
       - name: "🚀 Run Viral Shorts Pipeline"
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: openai/gpt-oss-20b
           YOUTUBE_CREDENTIALS_JSON: ${{ secrets.YOUTUBE_CREDENTIALS_JSON }}
         run: |
           DRY_RUN_FLAG=""
@@ -96,7 +97,7 @@ jobs:
         run: |
           echo "::error title=Pipeline Failed::The Daily Upload Pipeline encountered an issue."
           echo "::error::Common resolutions:"
-          echo "::error::  1. Add 'GEMINI_API_KEY' to GitHub Repo Secrets (Settings -> Secrets -> Actions)"
+          echo "::error::  1. Add 'GROQ_API_KEY' to GitHub Repo Secrets (Settings -> Secrets -> Actions)"
           echo "::error::  2. Add 'YOUTUBE_CREDENTIALS_JSON' (Base64 JSON of YouTube OAuth2 token)"
           echo "::error::  3. The workflow only publishes when a recent BTS source item and valid Gemini script are available."
           echo "::error::Run locally to test: python main.py --dry-run"
