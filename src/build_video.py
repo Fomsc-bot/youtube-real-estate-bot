@@ -264,6 +264,7 @@ def build_video(
     if niche != "bts" and not badge_path.exists():
         from src.generate_assets import ensure_assets
         ensure_assets()
+    badge_enabled = badge_path.exists() and niche != "bts"
 
     logo_path = Path(cfg.get("logo_path", LOGO_PATH))
     bgm_path = Path(bgm_path_str)
@@ -274,7 +275,7 @@ def build_video(
         hook_text_path=hook_text_path,
         font_path=font_path,
         scenes_meta=scenes_meta,
-        subscribe_badge_exists=badge_path.exists() and niche != "bts",
+        subscribe_badge_exists=badge_enabled,
         logo_exists=logo_path.exists(),
         bgm_exists=bgm_path.exists(),
     )
@@ -325,7 +326,9 @@ def build_video(
             "-i", str(audio_path.resolve()),
         ]
 
-    if badge_path.exists():
+    # Keep input indexes in sync with the filter graph. BTS videos deliberately
+    # omit this badge, so do not add it as an otherwise-unused FFmpeg input.
+    if badge_enabled:
         cmd += ["-i", str(badge_path.resolve())]
 
     if logo_path.exists():
