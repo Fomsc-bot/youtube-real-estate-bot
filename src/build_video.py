@@ -273,15 +273,26 @@ def build_video(
         bgm_exists=bgm_path.exists(),
     )
 
+    scene_files = sorted(list((output_dir / "scenes").glob("scene_*.jpg")))
     primary_image = image_path
     if not primary_image.exists():
-        scene_files = list((output_dir / "scenes").glob("scene_*.jpg"))
         if scene_files:
             primary_image = scene_files[0]
         else:
-            # Create procedural image fallback if none exists
             from src.fetch_content import create_fallback_scene_image
-            primary_image = create_fallback_scene_image(hook_text, "Real Estate", output_dir / "default_visual.jpg")
+            primary_image = create_fallback_scene_image(hook_text, "BTS", output_dir / "default_visual.jpg")
+
+    concat_file = None
+    if len(scene_files) > 1:
+        concat_file = output_dir / "scenes_concat.txt"
+        dur = max(1.0, total_duration / len(scene_files))
+        with open(concat_file, "w", encoding="utf-8") as f:
+            for sc in scene_files:
+                f.write(f"file '{sc.resolve().as_posix()}'\n")
+                f.write(f"duration {dur:.3f}\n")
+            # Concat demuxer requires repeating the final entry
+            f.write(f"file '{scene_files[-1].resolve().as_posix()}'\n")
+        logger.info(f"Generated multi-scene slideshow concat list -> {concat_file} ({len(scene_files)} images, {dur:.2f}s each)")
 
     # Write filtergraph to a temp script file.
     # -filter_complex_script avoids:
@@ -295,11 +306,18 @@ def build_video(
         filter_script_path = fcs.name
     logger.info(f"Filter script -> {filter_script_path} ({len(filter_str)} chars)")
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-loop", "1", "-i", str(primary_image.resolve()),
-        "-i", str(audio_path.resolve()),
-    ]
+    if concat_file and concat_file.exists():
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0", "-i", str(concat_file.resolve()),
+            "-i", str(audio_path.resolve()),
+        ]
+    else:
+        cmd = [
+            "ffmpeg", "-y",
+            "-loop", "1", "-i", str(primary_image.resolve()),
+            "-i", str(audio_path.resolve()),
+        ]
 
     if badge_path.exists():
         cmd += ["-i", str(badge_path.resolve())]
