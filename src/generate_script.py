@@ -188,18 +188,24 @@ def _call_groq(system_prompt: str, user_prompt: str) -> str:
                 json={
                     "model": model_name,
                     "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
+                        {
+                            "role": "user",
+                            "content": f"{system_prompt.strip()}\n\nSTORY / TASK:\n{user_prompt.strip()}",
+                        },
                     ],
                     "temperature": 0.7,
-                    "max_completion_tokens": 1024,
+                    # GPT-OSS spends part of its completion budget on reasoning;
+                    # 1024 tokens can leave no room for the constrained JSON body.
+                    "max_completion_tokens": 4096,
+                    "reasoning_effort": "low",
                     "response_format": GROQ_SCRIPT_RESPONSE_FORMAT,
                     "include_reasoning": False,
                 },
                 timeout=90,
             )
             response.raise_for_status()
-            text = response.json()["choices"][0]["message"]["content"].strip()
+            message = response.json()["choices"][0]["message"]
+            text = (message.get("content") or "").strip()
             if text:
                 return text
             raise RuntimeError(f"Groq model '{model_name}' returned an empty response.")
