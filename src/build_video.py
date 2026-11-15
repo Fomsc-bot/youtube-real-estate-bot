@@ -342,7 +342,15 @@ def build_video(
         pass
 
     if res.returncode != 0:
-        logger.error(f"FFmpeg Error Output:\n{res.stderr[-3000:]}")
+        diagnostic_lines = []
+        for line in res.stderr.splitlines():
+            if len(line) > 1000:
+                if not re.search(r"error|invalid|failed|unable|no such|not found", line, re.I):
+                    continue
+                line = f"{line[:350]} ... [long FFmpeg line truncated] ... {line[-350:]}"
+            diagnostic_lines.append(line)
+        diagnostics = "\n".join(diagnostic_lines[-40:]) or res.stderr[-3000:]
+        logger.error(f"FFmpeg diagnostics:\n{diagnostics}")
         raise RuntimeError(f"FFmpeg failed with code {res.returncode}")
 
     size_mb = output_path.stat().st_size / (1024 * 1024)

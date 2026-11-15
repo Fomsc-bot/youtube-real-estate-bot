@@ -467,18 +467,23 @@ def fetch_multi_scene_content(
         if i == 0 and source_content and source_content.get("local_image_path"):
             art_img = Path(source_content["local_image_path"])
             if art_img.exists():
-                import shutil
-                if art_img.suffix.lower() in {".jpg", ".jpeg"}:
-                    shutil.copy2(art_img, image_dest)
-                    fetched_path = image_dest
-                else:
-                    # Keep the downloaded source file unchanged; transcode only
-                    # the scene copy because the slideshow concat uses JPEGs.
-                    with Image.open(art_img) as article_image:
-                        article_image.convert("RGB").save(image_dest, "JPEG", quality=95)
-                    fetched_path = image_dest
+                # Keep the downloaded original untouched. The slideshow concat
+                # requires every frame to have identical 1080x1920 dimensions,
+                # so create a simple fit-and-pad render copy for this scene.
+                with Image.open(art_img) as article_image:
+                    original = article_image.convert("RGB")
+                width, height = original.size
+                fit_scale = min(1080 / width, 1920 / height)
+                fitted = original.resize(
+                    (max(1, int(width * fit_scale)), max(1, int(height * fit_scale))),
+                    Image.Resampling.LANCZOS,
+                )
+                scene_image = Image.new("RGB", (1080, 1920), (25, 10, 40))
+                scene_image.paste(fitted, ((1080 - fitted.width) // 2, (1920 - fitted.height) // 2))
+                scene_image.save(image_dest, "JPEG", quality=95)
+                fetched_path = image_dest
                 media_type = "image"
-                logger.info(f"Using article image for opening scene -> {image_dest}")
+                logger.info(f"Using article image in a 1080x1920 scene copy -> {image_dest}")
 
         # Use original editorial cards for remaining BTS scenes; do not imply
         # unrelated stock imagery is BTS footage.
