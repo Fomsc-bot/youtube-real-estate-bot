@@ -413,42 +413,20 @@ def fetch_article_preview_image(article_url: str, output_dir: Path) -> Optional[
 
         image_bytes = b"".join(chunks)
         with Image.open(BytesIO(image_bytes)) as image:
-            original = image.convert("RGB")
-        dest_path = output_dir / "article_image.jpg"
-        _format_vertical_editorial_image(original, dest_path)
-        logger.info(f"Downloaded and formatted article preview image -> {dest_path}")
+            image_format = (image.format or "JPEG").upper()
+            image.verify()
+        extension = {"JPEG": ".jpg", "JPG": ".jpg", "PNG": ".png", "WEBP": ".webp"}.get(image_format)
+        if not extension:
+            logger.warning(f"Unsupported article image format: {image_format}")
+            return None
+
+        dest_path = output_dir / f"article_image{extension}"
+        dest_path.write_bytes(image_bytes)
+        logger.info(f"Saved original article preview image unchanged -> {dest_path}")
         return dest_path
     except Exception as error:
         logger.warning(f"Could not fetch article preview image: {error}")
         return None
-
-
-def _format_vertical_editorial_image(original: Image.Image, dest_path: Path) -> None:
-    """Fit an article photo into a vertical frame without cropping its subject."""
-    width, height = original.size
-    bg_scale = max(1080 / width, 1920 / height)
-    bg_size = (int(width * bg_scale), int(height * bg_scale))
-    background = original.resize(bg_size, Image.Resampling.LANCZOS)
-    left = (bg_size[0] - 1080) // 2
-    top = (bg_size[1] - 1920) // 2
-    background = background.crop((left, top, left + 1080, top + 1920))
-    background = background.filter(ImageFilter.GaussianBlur(radius=28))
-    tint = Image.new("RGBA", (1080, 1920), (35, 10, 50, 105))
-    background = Image.alpha_composite(background.convert("RGBA"), tint).convert("RGB")
-
-    foreground_scale = min(1000 / width, 1050 / height)
-    foreground_size = (int(width * foreground_scale), int(height * foreground_scale))
-    foreground = original.resize(foreground_size, Image.Resampling.LANCZOS)
-    x = (1080 - foreground_size[0]) // 2
-    y = 270 + (1050 - foreground_size[1]) // 2
-    background.paste(foreground, (x, y))
-    draw = ImageDraw.Draw(background)
-    draw.rectangle(
-        [x - 4, y - 4, x + foreground_size[0] + 4, y + foreground_size[1] + 4],
-        outline=(244, 208, 63), width=5,
-    )
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
-    background.save(dest_path, "JPEG", quality=94)
 
 
 def fetch_multi_scene_content(
@@ -490,10 +468,17 @@ def fetch_multi_scene_content(
             art_img = Path(source_content["local_image_path"])
             if art_img.exists():
                 import shutil
-                shutil.copy2(art_img, image_dest)
-                fetched_path = image_dest
+                if art_img.suffix.lower() in {".jpg", ".jpeg"}:
+                    shutil.copy2(art_img, image_dest)
+                    fetched_path = image_dest
+                else:
+                    # Keep the downloaded source file unchanged; transcode only
+                    # the scene copy because the slideshow concat uses JPEGs.
+                    with Image.open(art_img) as article_image:
+                        article_image.convert("RGB").save(image_dest, "JPEG", quality=95)
+                    fetched_path = image_dest
                 media_type = "image"
-                logger.info(f"Using direct article image for scene {i} -> {image_dest}")
+                logger.info(f"Using article image for opening scene -> {image_dest}")
 
         # Use original editorial cards for remaining BTS scenes; do not imply
         # unrelated stock imagery is BTS footage.
