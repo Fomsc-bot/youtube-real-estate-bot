@@ -99,5 +99,5 @@ jobs:
           echo "::error::Common resolutions:"
           echo "::error::  1. Add 'GROQ_API_KEY' to GitHub Repo Secrets (Settings -> Secrets -> Actions)"
           echo "::error::  2. Add 'YOUTUBE_CREDENTIALS_JSON' (Base64 JSON of YouTube OAuth2 token)"
-          echo "::error::  3. The workflow only publishes when a recent BTS source item and valid Gemini script are available."
+          echo "::error::  3. The workflow requires a recent BTS source item and a Groq-generated script that passes the BTS and length checks."
           echo "::error::Run locally to test: python main.py --dry-run"

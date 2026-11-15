@@ -274,7 +274,37 @@ def generate_viral_script(
             narration = parsed["narration"].strip()
             words = narration.split()
             if niche == "bts" and not 45 <= len(words) <= 65:
-                raise ValueError(f"Generated BTS narration has {len(words)} words; expected 45-65")
+                # The model can occasionally undershoot the requested length.
+                # Ask it to revise the same source-bound script before failing.
+                for attempt in range(1, 3):
+                    logger.warning(
+                        f"Generated BTS narration has {len(words)} words; requesting revision "
+                        f"({attempt}/2)."
+                    )
+                    revision_prompt = (
+                        f"{user_prompt}\n\n"
+                        "REVISION REQUIRED: The previous narration was outside the required length. "
+                        "Rewrite the complete narration to 50-58 words (count narration only). "
+                        "Keep every factual claim strictly supported by the supplied headline and RSS excerpt; "
+                        "do not add details from memory. Add context or transitions only when supported, "
+                        "and keep the same source attribution and story-specific viewer question."
+                    )
+                    revised = _parse_json_response(_call_groq(system_prompt, revision_prompt))
+                    if not revised or "narration" not in revised:
+                        continue
+                    if not is_bts_content(revised):
+                        continue
+                    revised_narration = revised["narration"].strip()
+                    revised_words = revised_narration.split()
+                    if 45 <= len(revised_words) <= 65:
+                        parsed = revised
+                        narration = revised_narration
+                        words = revised_words
+                        break
+                else:
+                    raise ValueError(
+                        f"Generated BTS narration has {len(words)} words after two revision attempts; expected 45-65"
+                    )
             if niche == "bts" and (not parsed.get("title") or len(parsed["title"].strip()) > 60):
                 raise ValueError("Generated BTS title is missing or exceeds 60 characters")
             if niche == "bts" and not parsed.get("viewer_question", "").strip():
