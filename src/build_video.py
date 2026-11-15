@@ -43,6 +43,8 @@ DEFAULT_FONT = "assets/fonts/Montserrat-Bold.ttf"
 FALLBACK_FONT = "DejaVuSans-Bold"
 SUBSCRIBE_BADGE_PATH = "assets/subscribe_badge.png"
 LOGO_PATH = "assets/logo.png"
+BGM_SAMPLE_RATE = 44100
+BGM_DURATION_SECONDS = 30
 
 
 def parse_vtt(vtt_path: Path) -> List[dict]:
@@ -199,7 +201,9 @@ def _build_filter_complex(
         bgm_input_idx = input_idx if not logo_exists else input_idx + 1
         filters.append(
             f"[1:a]volume=1.0[a_voice];"
-            f"[{bgm_input_idx}:a]volume=0.15,aloop=loop=-1:size=2e+09[a_bgm];"
+            # `aloop:size` is an integer sample count, not a scientific-notation
+            # expression. The generated ambient track is 30 s at 44.1 kHz.
+            f"[{bgm_input_idx}:a]volume=0.15,aloop=loop=-1:size={BGM_SAMPLE_RATE * BGM_DURATION_SECONDS}[a_bgm];"
             f"[a_voice][a_bgm]amix=inputs=2:duration=first:dropout_transition=2[a_final]"
         )
         final_audio_label = "a_final"
