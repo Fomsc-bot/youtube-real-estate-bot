@@ -205,8 +205,22 @@ def generate_viral_script(
 ) -> dict:
     """Generate MoneyPrinterTurbo viral script with strict BTS guardrails."""
     if niche == "bts":
-        topic_str = topic or random.choice(BTS_TOPIC_POOL)
-        user_prompt = f"Write a viral YouTube Short script exclusively about BTS topic: '{topic_str}'."
+        if source_content and source_content.get("title"):
+            art_title = source_content.get("title", "BTS News Update")
+            art_desc = source_content.get("description", "")
+            user_prompt = (
+                f"Write a viral YouTube Short script based on this real breaking BTS news article:\n"
+                f"Article Headline: {art_title}\n"
+                f"Article Details: {art_desc}\n\n"
+                f"HARD RULES:\n"
+                f"1. Hook sentence (Sentence 1) MUST feature the headline or shocking achievement from this article.\n"
+                f"2. Keep narration to 45-65 words total.\n"
+                f"3. Final sentence MUST be: 'Subscribe for daily BTS updates and ARMY facts! 💜'\n"
+                f"4. Provide visual search keywords for each sentence matching the article details."
+            )
+        else:
+            topic_str = topic or random.choice(BTS_TOPIC_POOL)
+            user_prompt = f"Write a viral YouTube Short script exclusively about BTS topic: '{topic_str}'."
         system_prompt = BTS_SYSTEM_PROMPT
     elif niche == "real_estate":
         topic_str = topic or "5 Secrets of $100 Million Mega Mansions"

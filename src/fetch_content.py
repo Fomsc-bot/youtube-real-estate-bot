@@ -303,7 +303,114 @@ def create_fallback_scene_image(text_label: str, keyword: str, dest_path: Path) 
     return dest_path
 
 
-def fetch_multi_scene_content(script_data: dict, output_dir: Path) -> List[dict]:
+BTS_NEWS_FEEDS = [
+    "https://www.soompi.com/tag/bts/feed",
+    "https://www.soompi.com/tag/jungkook/feed",
+    "https://www.soompi.com/tag/jin/feed",
+    "https://www.soompi.com/tag/jimin/feed",
+    "https://www.soompi.com/tag/v/feed",
+    "https://www.soompi.com/tag/suga/feed",
+    "https://www.soompi.com/tag/rm/feed",
+    "https://www.soompi.com/tag/j-hope/feed",
+]
+
+
+def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
+    """
+    Fetch the latest breaking BTS news article from verified K-pop feeds.
+    Extracts the article headline, summary, and downloads its authentic photo.
+    100% Free, no API keys needed.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # Shuffle feeds to discover diverse member/group breaking stories
+    shuffled_feeds = list(BTS_NEWS_FEEDS)
+    random.shuffle(shuffled_feeds)
+
+    for feed_url in shuffled_feeds:
+        try:
+            r = requests.get(feed_url, headers=HTTP_HEADERS, timeout=10)
+            if r.status_code != 200:
+                continue
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(r.text)
+            items = root.findall(".//item")
+            if not items:
+                continue
+
+            for item in items[:6]:
+                title = item.find("title").text if item.find("title") is not None else ""
+                link = item.find("link").text if item.find("link") is not None else ""
+                desc = item.find("description").text if item.find("description") is not None else ""
+
+                if not link or not title:
+                    continue
+
+                # Fetch article HTML to extract the high-res og:image
+                ar = requests.get(link, headers=HTTP_HEADERS, timeout=10)
+                if ar.status_code != 200:
+                    continue
+                html = ar.text
+
+                og_img = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html)
+                if not og_img:
+                    og_img = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html)
+                if not og_img:
+                    continue
+
+                img_url = og_img.group(1)
+                img_resp = requests.get(img_url, headers=HTTP_HEADERS, timeout=12)
+                if img_resp.status_code == 200 and len(img_resp.content) > 5000:
+                    dest_img = output_dir / "article_image.jpg"
+                    
+                    # Format to 1080x1920 (9:16 Shorts)
+                    orig = Image.open(BytesIO(img_resp.content)).convert("RGB")
+                    w, h = orig.size
+
+                    bg_scale = max(1080 / w, 1920 / h)
+                    bg_w, bg_h = int(w * bg_scale), int(h * bg_scale)
+                    bg = orig.resize((bg_w, bg_h), Image.Resampling.LANCZOS)
+                    left = (bg_w - 1080) // 2
+                    top = (bg_h - 1920) // 2
+                    bg = bg.crop((left, top, left + 1080, top + 1920))
+                    bg = bg.filter(ImageFilter.GaussianBlur(radius=28))
+
+                    tint = Image.new("RGBA", (1080, 1920), (35, 10, 50, 115))
+                    bg = Image.alpha_composite(bg.convert("RGBA"), tint).convert("RGB")
+
+                    fg_scale = min(1000 / w, 1050 / h)
+                    fg_w, fg_h = int(w * fg_scale), int(h * fg_scale)
+                    fg = orig.resize((fg_w, fg_h), Image.Resampling.LANCZOS)
+
+                    fg_x = (1080 - fg_w) // 2
+                    fg_y = 270 + (1050 - fg_h) // 2
+                    bg.paste(fg, (fg_x, fg_y))
+
+                    draw = ImageDraw.Draw(bg)
+                    draw.rectangle([fg_x - 4, fg_y - 4, fg_x + fg_w + 4, fg_y + fg_h + 4], outline=(244, 208, 63), width=5)
+                    bg.save(dest_img, "JPEG", quality=95)
+
+                    clean_desc = re.sub(r"<[^>]+>", "", desc).strip()
+                    logger.info(f"✅ Downloaded & formatted article image from {link[:50]}...")
+                    return {
+                        "title": title.replace("&#039;", "'").replace("&quot;", '"'),
+                        "description": clean_desc.replace("&#039;", "'").replace("&quot;", '"'),
+                        "article_url": link,
+                        "image_url": img_url,
+                        "local_image_path": str(dest_img),
+                        "source": "Soompi BTS News",
+                    }
+        except Exception as e:
+            logger.warning(f"Error fetching from feed '{feed_url}': {e}")
+            continue
+
+    return None
+
+
+def fetch_multi_scene_content(
+    script_data: dict,
+    output_dir: Path,
+    source_content: Optional[dict] = None,
+) -> List[dict]:
     """
     Fetch / generate scene visual clips matching every sentence in the script.
     Prefers real BTS photos -> Pexels video -> procedural graphics fallback.
@@ -331,8 +438,18 @@ def fetch_multi_scene_content(script_data: dict, output_dir: Path) -> List[dict]
         fetched_path = None
         media_type = "image"
 
+        # 0. If article image is available, use it for the opening hook scene!
+        if i == 0 and source_content and source_content.get("local_image_path"):
+            art_img = Path(source_content["local_image_path"])
+            if art_img.exists():
+                import shutil
+                shutil.copy2(art_img, image_dest)
+                fetched_path = image_dest
+                media_type = "image"
+                logger.info(f"Using direct article image for scene {i} -> {image_dest}")
+
         # 1. If Pexels video API key is set, try fetching stock video clip
-        if pexels_key:
+        if not fetched_path and pexels_key:
             try:
                 fetched_path = fetch_pexels_video(kw, pexels_key, video_dest)
                 if fetched_path:

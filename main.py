@@ -35,7 +35,7 @@ logger = logging.getLogger("ViralShorts.Orchestrator")
 # ── Pipeline Imports ──────────────────────────────────────────────────────────
 from src.generate_assets import ensure_assets
 from src.generate_script import generate_viral_script, get_fallback_script
-from src.fetch_content import fetch_multi_scene_content, save_json, fetch_apod
+from src.fetch_content import fetch_multi_scene_content, save_json, fetch_apod, fetch_latest_bts_article
 from src.generate_audio import generate_audio
 from src.build_video import build_video
 from src.generate_metadata import generate_metadata
@@ -76,7 +76,19 @@ def main(
         logger.info("DRY RUN: Using fixture script data.")
     else:
         source_content = None
-        if niche == "space":
+        if niche == "bts":
+            try:
+                source_content = fetch_latest_bts_article(output_dir)
+                if source_content:
+                    save_json(source_content, output_dir / "article.json")
+                    logger.info(f"✅ Article fetched: {source_content['title'][:60]}")
+                    logger.info(f"   Source: {source_content.get('article_url', '')[:60]}")
+                else:
+                    logger.warning("⚠️  No article fetched — using BTS topic pool fallback.")
+            except Exception as e:
+                logger.warning(f"⚠️  Article fetch failed: {e} — using BTS topic pool fallback.")
+
+        elif niche == "space":
             nasa_key = os.environ.get("NASA_API_KEY") or "DEMO_KEY"
             try:
                 source_content = fetch_apod(nasa_key, output_dir, date=date)
@@ -102,7 +114,7 @@ def main(
             create_fallback_scene_image(sc["text"], sc["keyword"], Path(sc["media_path"]))
         logger.info("DRY RUN: Using fixture scenes visual assets.")
     else:
-        scenes_data = fetch_multi_scene_content(script_data, output_dir)
+        scenes_data = fetch_multi_scene_content(script_data, output_dir, source_content=source_content)
     logger.info(f"✅ Step 2 complete. Fetched {len(scenes_data)} visual clips.")
 
     # ── Step 3: Generate Audio & WebVTT Karaoke Timestamps ────────────────────
@@ -126,8 +138,18 @@ def main(
         video_path = video_dry_run(video_output)
         logger.info("DRY RUN: Placeholder video created.")
     else:
+        # Resolve the primary image: article image (BTS), APOD image (space), or first scene
+        if source_content and source_content.get("local_image_path"):
+            primary_image = Path(source_content["local_image_path"])
+        elif (output_dir / "apod_image.jpg").exists():
+            primary_image = output_dir / "apod_image.jpg"
+        elif (output_dir / "article_image.jpg").exists():
+            primary_image = output_dir / "article_image.jpg"
+        else:
+            primary_image = output_dir / "scenes" / "scene_0.jpg"
+
         video_path = build_video(
-            image_path=output_dir / "apod_image.jpg",
+            image_path=primary_image,
             audio_path=output_dir / "narration.mp3",
             vtt_path=output_dir / "narration.vtt",
             script_path=output_dir / "script.json",
