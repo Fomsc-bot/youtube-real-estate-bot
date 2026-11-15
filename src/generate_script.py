@@ -61,6 +61,44 @@ logger = logging.getLogger("generate_script")
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b"
 GROQ_MODEL_FALLBACKS = ["openai/gpt-oss-120b"]
+GROQ_SCRIPT_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "bts_short_script",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "hook_text": {"type": "string"},
+                "title": {"type": "string"},
+                "viewer_question": {"type": "string"},
+                "narration": {"type": "string"},
+                "sentences": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "text": {"type": "string"},
+                            "keywords": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["text", "keywords"],
+                        "additionalProperties": False,
+                    },
+                },
+                "title_keyword": {"type": "string"},
+            },
+            "required": [
+                "hook_text",
+                "title",
+                "viewer_question",
+                "narration",
+                "sentences",
+                "title_keyword",
+            ],
+            "additionalProperties": False,
+        },
+    },
+}
 
 # ── BTS Relevance Guardrail Keywords ──────────────────────────────────────────
 BTS_KEYWORDS = [
@@ -155,7 +193,7 @@ def _call_groq(system_prompt: str, user_prompt: str) -> str:
                     ],
                     "temperature": 0.7,
                     "max_completion_tokens": 1024,
-                    "response_format": {"type": "json_object"},
+                    "response_format": GROQ_SCRIPT_RESPONSE_FORMAT,
                     "include_reasoning": False,
                 },
                 timeout=90,
