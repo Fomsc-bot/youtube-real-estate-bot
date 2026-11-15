@@ -51,14 +51,14 @@ def banner(msg: str) -> None:
 
 def main(
     dry_run: bool = False,
-    niche: str = "space",
+    niche: str = "bts",
     topic: str = None,
     date: str = None,
 ) -> None:
     start_time = datetime.now(timezone.utc)
     ensure_assets()
 
-    banner("🚀 VIRAL YOUTUBE SHORTS PIPELINE — MoneyPrinterTurbo + Remotion")
+    banner("💜 BTS SPOTLIGHT — VIRAL YOUTUBE SHORTS PIPELINE")
     logger.info(
         f"Mode: {'DRY RUN' if dry_run else 'PRODUCTION'} | "
         f"Niche: {niche.upper()} | "
@@ -169,7 +169,7 @@ def main(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Viral YouTube Shorts Pipeline Orchestrator")
     parser.add_argument("--dry-run", action="store_true", help="Run end-to-end dry run without API calls")
-    parser.add_argument("--niche", default="space", choices=["real_estate", "space"], help="Content niche")
+    parser.add_argument("--niche", default="bts", choices=["bts", "real_estate", "space"], help="Content niche")
     parser.add_argument("--topic", default=None, help="Specific topic prompt")
     parser.add_argument("--date", default=None, help="APOD date for space niche (YYYY-MM-DD)")
     args = parser.parse_args()

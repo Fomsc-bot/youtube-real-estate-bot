@@ -109,15 +109,29 @@ def create_fallback_scene_image(text_label: str, keyword: str, dest_path: Path) 
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     width, height = 1080, 1920
     
-    img = Image.new("RGB", (width, height), (15, 20, 30))
+    # Check if BTS themed (purple & gold) or space/general
+    is_bts = any(w in (text_label + " " + keyword).lower() for w in ["bts", "army", "jungkook", "jimin", "jin", "suga", "rm", "v", "kpop", "bangtan", "purple"])
+    
+    if is_bts:
+        bg_color = (25, 10, 40)       # Deep BTS Purple
+        circle_color = (110, 45, 150) # Vibrant Purple Glow
+        box_fill = (45, 20, 70)       # Dark Purple Card
+        border_gold = (244, 208, 63)  # Gold Accent
+    else:
+        bg_color = (15, 20, 30)
+        circle_color = (40, 60, 90)
+        box_fill = (25, 35, 55)
+        border_gold = (212, 175, 55)
+
+    img = Image.new("RGB", (width, height), bg_color)
     draw = ImageDraw.Draw(img)
     
     for r in range(400, 100, -50):
         draw.ellipse([width//2 - r, height//2 - r, width//2 + r, height//2 + r],
-                     outline=(40, 60, 90), width=4)
+                     outline=circle_color, width=4)
         
     draw.rectangle([80, height//2 - 200, width - 80, height//2 + 200],
-                   fill=(25, 35, 55), outline=(212, 175, 55), width=4)
+                   fill=box_fill, outline=border_gold, width=4)
     
     try:
         font_lg = ImageFont.truetype("arial.ttf", 52)
@@ -232,29 +246,29 @@ def save_json(data: dict, path: Path) -> None:
 _DRY_RUN_SCENES = [
     {
         "scene_index": 0,
-        "text": "Inside this $100 Million Mega Mansion lies a secret room hidden behind a waterfall.",
-        "keyword": "luxury mansion pool",
+        "text": "Did you know BTS holds over thirty Guinness World Records?",
+        "keyword": "stadium concert crowd",
         "media_path": "output/scenes/scene_0.jpg",
         "media_type": "image"
     },
     {
         "scene_index": 1,
-        "text": "The primary suite spans 3,000 square feet with 24-karat gold finishes.",
-        "keyword": "luxury penthouse bedroom",
+        "text": "They became the first group in history to hold multiple Billboard number-one debuts.",
+        "keyword": "music award trophy",
         "media_path": "output/scenes/scene_1.jpg",
         "media_type": "image"
     },
     {
         "scene_index": 2,
-        "text": "An underground garage houses up to twenty supercar collectibles.",
-        "keyword": "luxury garage supercar",
+        "text": "Their global impact inspired millions and brought Korean music to the United Nations.",
+        "keyword": "united nations assembly",
         "media_path": "output/scenes/scene_2.jpg",
         "media_type": "image"
     },
     {
         "scene_index": 3,
-        "text": "Subscribe for daily luxury real estate tours and secrets!",
-        "keyword": "luxury home living room",
+        "text": "Subscribe for daily BTS updates and ARMY facts! 💜",
+        "keyword": "purple lights crowd",
         "media_path": "output/scenes/scene_3.jpg",
         "media_type": "image"
     }

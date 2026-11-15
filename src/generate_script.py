@@ -1,18 +1,19 @@
 """
 generate_script.py — MoneyPrinterTurbo-style Viral Script Generator
 
-Uses Google Gemini AI to turn real estate or space topics into viral short-form
-narration scripts (45–70 words).
+Uses Google Gemini AI to generate viral short-form narration scripts (45–65 words).
+Optimized for BTS (Bangtan Sonyeondan) spotlight, records, member milestones & ARMY moments.
 
 Key features (MoneyPrinterTurbo Architecture):
   1. 3-Second Psychological Hook (visual & verbal pattern interrupt)
   2. Micro-cliffhangers and punchy pacing
-  3. High-converting subscriber CTA ("Subscribe for daily luxury tours!")
-  4. Sentence-by-sentence visual keyword extraction for Pexels stock video alignment
+  3. High-converting subscriber CTA ("Subscribe for daily BTS updates! 💜")
+  4. Sentence-by-sentence visual keyword extraction for video clip alignment
+  5. Strict BTS Guardrail: Rejects any non-BTS content to keep channel 100% focused.
 
 Usage:
-    python src/generate_script.py --niche real_estate
-    python src/generate_script.py --niche space --dry-run
+    python src/generate_script.py --niche bts
+    python src/generate_script.py --niche bts --dry-run
 
 Note: Uses google-genai SDK (google.genai), NOT the deprecated google-generativeai.
 """
@@ -21,6 +22,7 @@ import argparse
 import json
 import logging
 import os
+import random
 import re
 import sys
 from pathlib import Path
@@ -63,21 +65,46 @@ logging.basicConfig(
 )
 logger = logging.getLogger("generate_script")
 
-# ── System Prompts ─────────────────────────────────────────────────────────────
-REAL_ESTATE_SYSTEM_PROMPT = """You are a viral YouTube Shorts scriptwriter for a top-tier Real Estate & Luxury Architecture channel.
+# ── BTS Relevance Guardrail Keywords ──────────────────────────────────────────
+BTS_KEYWORDS = [
+    "bts", "bangtan", "army", "namjoon", "rm", "seokjin", "jin",
+    "yoongi", "suga", "agust d", "hoseok", "j-hope", "jhope",
+    "jimin", "taehyung", "v", "jungkook", "jk", "bighit", "hybe",
+    "borahae", "love yourself", "map of the soul", "proof"
+]
 
-Your goal is to write a high-retention 15–30 second YouTube Short script about real estate / luxury property / architectural marvels / home buying secrets.
+BTS_TOPIC_POOL = [
+    "The Historic Guinness World Record Only BTS Has Ever Broken",
+    "How Jungkook Became the First K-Pop Soloist to Achieve 1 Billion Streams This Fast",
+    "The Emotional Meaning Behind BTS's Purple Heart and Borahae",
+    "Why BTS's UN General Assembly Speech Shook the Entire World",
+    "The Incredible Story of How RM Learned Fluent English from Friends",
+    "Jin's Heartwarming Promise to ARMY and What Happened Next",
+    "How SUGA Turned Underground Rapping into Global Stadium Anthems",
+    "J-Hope's Historic Lollapalooza Headline Performance That Made History",
+    "Jimin's Record-Breaking Solo Debut That Topped the Billboard Hot 100",
+    "Why V Taehyung's Deep Vocals and Jazz Records Broke Streaming History",
+    "The Untold Story of BTS's Pre-Debut Struggles in a One-Room Dorm",
+]
+
+# ── System Prompts ─────────────────────────────────────────────────────────────
+BTS_SYSTEM_PROMPT = """You are a viral YouTube Shorts scriptwriter for a top-tier BTS (Bangtan Sonyeondan) & ARMY channel.
+
+Your goal is to write a high-retention 15–30 second YouTube Short script EXCLUSIVELY about BTS or its members: RM (Kim Namjoon), Jin (Kim Seokjin), SUGA (Min Yoongi / Agust D), J-Hope (Jung Hoseok), Jimin (Park Jimin), V (Kim Taehyung), or Jungkook (Jeon Jungkook).
+
+CRITICAL GUARDRAIL:
+You MUST ONLY write about BTS. NEVER generate content about any other unrelated topic. Every script must be 100% focused on BTS milestones, records, member moments, or ARMY history.
 
 HARD RULES:
-1. Total word count: 45–68 words ONLY.
-2. Sentence 1 MUST be an irresistible viral hook (pattern interrupt / curiosity gap). Example: "Do NOT buy a mansion until you check this legal loophole..." or "Inside this $120 Million Mega Mansion lies a secret room..."
+1. Total word count: 45–65 words ONLY.
+2. Sentence 1 MUST be an irresistible viral hook (pattern interrupt / curiosity gap). Example: "Did you know BTS broke a world record that no music group has ever touched..." or "The heartwarming reason Jin made this secret promise to ARMY..."
 3. Short, high-energy sentences (max 10-12 words per sentence).
-4. Final sentence MUST be a high-conversion subscriber CTA: "Subscribe for daily luxury real estate tours and secrets!"
-5. For EVERY sentence in the narration, provide 2-3 visual search keywords suitable for Pexels HD stock video search (e.g., ["luxury mansion pool", "modern villa exterior"]).
+4. Final sentence MUST be a high-conversion subscriber CTA: "Subscribe for daily BTS updates and ARMY facts! 💜"
+5. For EVERY sentence in the narration, provide 2-3 visual search keywords suitable for stock video / concert visuals (e.g., ["stadium concert crowd purple", "kpop stage lights"]).
 
 Output MUST be in raw JSON (no markdown fences):
 {
-  "hook_text": "<3-5 word intriguing video overlay title>",
+  "hook_text": "<3-5 word intriguing BTS video overlay title>",
   "narration": "<complete narration text>",
   "sentences": [
     {
@@ -85,34 +112,34 @@ Output MUST be in raw JSON (no markdown fences):
       "keywords": ["<keyword1>", "<keyword2>"]
     }
   ],
-  "title_keyword": "<main search keyword for video title>"
+  "title_keyword": "<main BTS search keyword for video title>"
 }
 """
+
+REAL_ESTATE_SYSTEM_PROMPT = """You are a viral YouTube Shorts scriptwriter for a top-tier Real Estate & Luxury Architecture channel.
+Your goal is to write a high-retention 15–30 second YouTube Short script about luxury property.
+Word count: 45-65 words. Final sentence: "Subscribe for daily luxury real estate tours and secrets!"
+Output raw JSON with hook_text, narration, sentences, and title_keyword."""
 
 SPACE_SYSTEM_PROMPT = """You are a viral YouTube Shorts scriptwriter for a science & space channel.
-
 Write a punchy, mind-blowing 15–30 second script about space / astronomy.
+Word count: 45-65 words. Final sentence: "Subscribe for daily mind-blowing space facts!"
+Output raw JSON with hook_text, narration, sentences, and title_keyword."""
 
-HARD RULES:
-1. Total word count: 45–68 words ONLY.
-2. Sentence 1 MUST be a viral hook stating the most surprising space fact immediately.
-3. Short, punchy sentences.
-4. Final sentence MUST be: "Subscribe for daily mind-blowing space facts!"
-5. Provide visual search keywords for Pexels HD video search for each sentence.
 
-Output MUST be in raw JSON (no markdown fences):
-{
-  "hook_text": "<3-5 word intriguing overlay title>",
-  "narration": "<complete narration text>",
-  "sentences": [
-    {
-      "text": "<sentence 1 text>",
-      "keywords": ["<keyword1>", "<keyword2>"]
-    }
-  ],
-  "title_keyword": "<main keyword>"
-}
-"""
+def is_bts_content(script_data: dict) -> bool:
+    """Validate that script content is strictly relevant to BTS."""
+    text_corpus = (
+        script_data.get("narration", "") + " " +
+        script_data.get("hook_text", "") + " " +
+        script_data.get("title_keyword", "")
+    ).lower()
+
+    for kw in BTS_KEYWORDS:
+        # Match as whole word or part of token
+        if re.search(r"\b" + re.escape(kw) + r"\b", text_corpus):
+            return True
+    return False
 
 
 def _get_gemini_client():
@@ -172,16 +199,15 @@ def _parse_json_response(raw: str) -> dict:
 
 
 def generate_viral_script(
-    niche: str = "real_estate",
+    niche: str = "bts",
     topic: Optional[str] = None,
     source_content: Optional[dict] = None,
 ) -> dict:
-    """Generate MoneyPrinterTurbo viral script for real_estate or space."""
-    if niche == "space" and source_content:
-        title = source_content.get("title", "Space Discovery")
-        explanation = source_content.get("explanation", "")
-        user_prompt = f"Topic: {title}\nExplanation: {explanation[:1500]}\nGenerate viral script with keywords."
-        system_prompt = SPACE_SYSTEM_PROMPT
+    """Generate MoneyPrinterTurbo viral script with strict BTS guardrails."""
+    if niche == "bts":
+        topic_str = topic or random.choice(BTS_TOPIC_POOL)
+        user_prompt = f"Write a viral YouTube Short script exclusively about BTS topic: '{topic_str}'."
+        system_prompt = BTS_SYSTEM_PROMPT
     elif niche == "real_estate":
         topic_str = topic or "5 Secrets of $100 Million Mega Mansions"
         user_prompt = f"Write a viral YouTube Short script about real estate topic: '{topic_str}'."
@@ -192,28 +218,132 @@ def generate_viral_script(
         system_prompt = SPACE_SYSTEM_PROMPT
 
     try:
-        # Validate client can be created before calling
         _get_gemini_client()
         raw = _call_gemini(system_prompt, user_prompt)
         parsed = _parse_json_response(raw)
 
         if parsed and "narration" in parsed:
+            # Enforce BTS relevance guardrail
+            if niche == "bts" and not is_bts_content(parsed):
+                logger.warning("Generated script failed BTS relevance check! Rejecting non-BTS content.")
+                return get_fallback_script("bts", topic)
+
             narration = parsed["narration"].strip()
             words = narration.split()
             parsed["word_count"] = len(words)
             parsed["niche"] = niche
-            logger.info(f"Generated viral script ({len(words)} words): {narration[:60]}...")
+            logger.info(f"Generated BTS viral script ({len(words)} words): {narration[:60]}...")
             return parsed
 
     except Exception as e:
-        logger.warning(f"Gemini API generation unavailable ({e}). Using offline viral script generator.")
+        logger.warning(f"Gemini API generation unavailable ({e}). Using offline BTS viral script.")
 
     return get_fallback_script(niche, topic)
 
 
-def get_fallback_script(niche: str = "real_estate", topic: Optional[str] = None) -> dict:
+# ── BTS Offline Fallback Templates ─────────────────────────────────────────────
+_BTS_FALLBACK_TEMPLATES = [
+    {
+        "hook_text": "BTS Historic World Record",
+        "narration": (
+            "Did you know BTS holds over thirty Guinness World Records? "
+            "They became the first group in history to hold multiple Billboard number-one debuts. "
+            "Their global impact inspired millions and brought Korean music to the United Nations. "
+            "Subscribe for daily BTS updates and ARMY facts! 💜"
+        ),
+        "sentences": [
+            {
+                "text": "Did you know BTS holds over thirty Guinness World Records?",
+                "keywords": ["stadium concert crowd", "purple neon stage"]
+            },
+            {
+                "text": "They became the first group in history to hold multiple Billboard number-one debuts.",
+                "keywords": ["music award trophy", "kpop stage performance"]
+            },
+            {
+                "text": "Their global impact inspired millions and brought Korean music to the United Nations.",
+                "keywords": ["united nations assembly", "purple ocean concert"]
+            },
+            {
+                "text": "Subscribe for daily BTS updates and ARMY facts! 💜",
+                "keywords": ["purple lights crowd", "kpop concert stadium"]
+            }
+        ],
+        "title_keyword": "BTS World Records",
+        "word_count": 52,
+        "niche": "bts",
+        "fallback": True,
+    },
+    {
+        "hook_text": "Jungkook Golden Record",
+        "narration": (
+            "Jungkook made music history by smashing one billion streams faster than any soloist. "
+            "His debut album Golden dominated global charts in over one hundred countries. "
+            "From the youngest member to a worldwide superstar, his journey is legendary. "
+            "Subscribe for daily BTS updates and ARMY facts! 💜"
+        ),
+        "sentences": [
+            {
+                "text": "Jungkook made music history by smashing one billion streams faster than any soloist.",
+                "keywords": ["music streaming record", "concert microphone stage"]
+            },
+            {
+                "text": "His debut album Golden dominated global charts in over one hundred countries.",
+                "keywords": ["gold vinyl record", "billboard music charts"]
+            },
+            {
+                "text": "From the youngest member to a worldwide superstar, his journey is legendary.",
+                "keywords": ["stadium concert performance", "purple lights stage"]
+            },
+            {
+                "text": "Subscribe for daily BTS updates and ARMY facts! 💜",
+                "keywords": ["purple ocean army", "kpop stadium crowd"]
+            }
+        ],
+        "title_keyword": "Jungkook Records",
+        "word_count": 52,
+        "niche": "bts",
+        "fallback": True,
+    },
+    {
+        "hook_text": "Jin Secret Promise",
+        "narration": (
+            "Jin touched millions of fans with a heartfelt promise made right before military service. "
+            "The moment he finished duty, he immediately held a warm hug event for ARMY. "
+            "His unwavering loyalty proves why BTS and ARMY have an unbreakable bond. "
+            "Subscribe for daily BTS updates and ARMY facts! 💜"
+        ),
+        "sentences": [
+            {
+                "text": "Jin touched millions of fans with a heartfelt promise made right before military service.",
+                "keywords": ["heartwarming fan moment", "purple aesthetic stage"]
+            },
+            {
+                "text": "The moment he finished duty, he immediately held a warm hug event for ARMY.",
+                "keywords": ["fan meeting stadium", "kpop idol smile"]
+            },
+            {
+                "text": "His unwavering loyalty proves why BTS and ARMY have an unbreakable bond.",
+                "keywords": ["purple ocean concert", "stadium lightsticks"]
+            },
+            {
+                "text": "Subscribe for daily BTS updates and ARMY facts! 💜",
+                "keywords": ["purple lights crowd", "bts concert celebration"]
+            }
+        ],
+        "title_keyword": "BTS Jin Promise",
+        "word_count": 53,
+        "niche": "bts",
+        "fallback": True,
+    }
+]
+
+
+def get_fallback_script(niche: str = "bts", topic: Optional[str] = None) -> dict:
     """Offline high-converting script template when AI API is unconfigured/offline."""
-    if niche == "real_estate":
+    if niche == "bts":
+        return random.choice(_BTS_FALLBACK_TEMPLATES)
+    elif niche == "real_estate":
         return {
             "hook_text": "Inside $100M Mega Mansion",
             "narration": (
@@ -280,42 +410,13 @@ def get_fallback_script(niche: str = "real_estate", topic: Optional[str] = None)
 
 
 # ── DRY RUN ────────────────────────────────────────────────────────────────────
-_DRY_RUN_SCRIPT = {
-    "hook_text": "Inside $100M Mega Mansion",
-    "narration": (
-        "Inside this $100 Million Mega Mansion lies a secret room hidden behind a waterfall. "
-        "The primary suite spans 3,000 square feet with 24-karat gold finishes. "
-        "An underground garage houses up to twenty supercar collectibles. "
-        "Subscribe for daily luxury real estate tours and secrets!"
-    ),
-    "sentences": [
-        {
-            "text": "Inside this $100 Million Mega Mansion lies a secret room hidden behind a waterfall.",
-            "keywords": ["luxury mansion pool", "modern villa exterior"]
-        },
-        {
-            "text": "The primary suite spans 3,000 square feet with 24-karat gold finishes.",
-            "keywords": ["luxury penthouse bedroom", "modern interior design"]
-        },
-        {
-            "text": "An underground garage houses up to twenty supercar collectibles.",
-            "keywords": ["luxury garage supercar", "modern architecture"]
-        },
-        {
-            "text": "Subscribe for daily luxury real estate tours and secrets!",
-            "keywords": ["luxury home living room", "modern house tour"]
-        }
-    ],
-    "title_keyword": "Mega Mansion Secrets",
-    "word_count": 52,
-    "niche": "real_estate",
-    "dry_run": True,
-}
+_DRY_RUN_SCRIPT = _BTS_FALLBACK_TEMPLATES[0].copy()
+_DRY_RUN_SCRIPT["dry_run"] = True
 
 
 def main():
     parser = argparse.ArgumentParser(description="Generate MoneyPrinterTurbo viral script.")
-    parser.add_argument("--niche", default="real_estate", help="Niche: real_estate | space")
+    parser.add_argument("--niche", default="bts", help="Niche: bts | real_estate | space")
     parser.add_argument("--topic", default=None, help="Custom topic prompt")
     parser.add_argument("--output", default="output/script.json", help="Output JSON path")
     parser.add_argument("--dry-run", action="store_true", help="Use dry-run fixture")

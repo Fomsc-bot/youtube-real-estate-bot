@@ -1,8 +1,8 @@
-name: "🎬 Real Estate & Viral Shorts — Daily Upload"
+name: "💜 BTS Spotlight — Daily Shorts Upload"
 
 on:
   schedule:
-    - cron: '30 12 * * *'
+    - cron: '30 12 * * *' # Daily at 12:30 UTC
   workflow_dispatch:
     inputs:
       dry_run:
@@ -14,9 +14,9 @@ on:
       niche:
         description: "Select Niche"
         required: false
-        default: "space"
+        default: "bts"
         type: choice
-        options: ["space", "real_estate"]
+        options: ["bts", "real_estate", "space"]
       topic:
         description: "Custom Topic Prompt (optional)"
         required: false
@@ -24,7 +24,7 @@ on:
 
 jobs:
   upload-shorts:
-    name: "Build & Upload Viral Short"
+    name: "Build & Upload BTS Short"
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -74,7 +74,7 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           DRY_RUN_FLAG=""
-          NICHE_FLAG="--niche space"
+          NICHE_FLAG="--niche bts"
           TOPIC_FLAG=""
 
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then

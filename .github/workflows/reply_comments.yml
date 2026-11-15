@@ -1,8 +1,8 @@
-name: "💬 The Universe — Auto Comment Replies"
+name: "💬 BTS Spotlight — Auto Comment Replies"
 
 on:
   schedule:
-    - cron: "0 17 * * *"   # 5:00 PM UTC — 3 hours after daily upload (2 PM UTC)
+    - cron: "0 17 * * *"   # 5:00 PM UTC — after daily upload
   workflow_dispatch:
     inputs:
       video_id:
