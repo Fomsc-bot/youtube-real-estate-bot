@@ -156,7 +156,7 @@ def _call_groq(system_prompt: str, user_prompt: str) -> str:
                     "temperature": 0.7,
                     "max_completion_tokens": 1024,
                     "response_format": {"type": "json_object"},
-                    "reasoning_format": "hidden",
+                    "include_reasoning": False,
                 },
                 timeout=90,
             )
@@ -166,7 +166,9 @@ def _call_groq(system_prompt: str, user_prompt: str) -> str:
                 return text
             raise RuntimeError(f"Groq model '{model_name}' returned an empty response.")
         except (requests.RequestException, KeyError, IndexError, TypeError, ValueError, RuntimeError) as e:
-            logger.warning(f"Groq model '{model_name}' failed: {e}. Trying fallback model...")
+            response_body = getattr(getattr(e, "response", None), "text", "")
+            details = f"; API response: {response_body[:1000]}" if response_body else ""
+            logger.warning(f"Groq model '{model_name}' failed: {e}{details}. Trying fallback model...")
             last_err = e
 
     if last_err:
