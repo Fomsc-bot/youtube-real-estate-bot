@@ -326,6 +326,17 @@ def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
     from html import unescape
 
     candidates = []
+    history_path = output_dir / "content_history.json"
+    try:
+        history = json.loads(history_path.read_text(encoding="utf-8")) if history_path.exists() else {}
+    except (OSError, ValueError):
+        history = {}
+    cutoff_history = datetime.now().astimezone() - timedelta(days=30)
+    seen_urls = {
+        row.get("article_url") for row in history.get("items", [])
+        if row.get("article_url") and row.get("used_at")
+        and datetime.fromisoformat(row["used_at"]).astimezone() >= cutoff_history
+    }
     cutoff = datetime.now().astimezone() - timedelta(days=3)
     for feed_url in BTS_NEWS_FEEDS:
         try:
@@ -363,6 +374,8 @@ def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
                     continue
                 if not re.search(r"\b(BTS|Bangtan|Jungkook|Jimin|Jin|Suga|Yoongi|RM|Namjoon|J-Hope|Hobi|V|Taehyung)\b", title, re.I):
                     continue
+                if link in seen_urls:
+                    continue
                 candidates.append({"title": title, "description": excerpt, "article_url": link,
                     "published_at": published.isoformat(), "source": "Soompi",
                     "article_image_url": image_url})
@@ -370,6 +383,7 @@ def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
             logger.warning(f"Could not read BTS RSS feed {feed_url}: {error}")
 
     if not candidates:
+        logger.warning("No recent, unused BTS source item found in the last 3 days.")
         return None
     candidates.sort(key=lambda item: item["published_at"], reverse=True)
     selected = candidates[0]
@@ -380,6 +394,14 @@ def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
     if local_image:
         selected["local_image_path"] = str(local_image)
     logger.info(f"Selected newest source item: {selected['title'][:100]} ({selected['article_url']})")
+    history.setdefault("items", []).append({
+        "article_url": selected["article_url"],
+        "title": selected["title"],
+        "used_at": datetime.now().astimezone().isoformat(),
+    })
+    history["items"] = history["items"][-100:]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
     return selected
 
 
@@ -464,8 +486,8 @@ def fetch_multi_scene_content(
     source_content: Optional[dict] = None,
 ) -> List[dict]:
     """
-    Assign the selected article image to every BTS sentence scene. Other niches
-    retain their existing stock/procedural visual behavior.
+    Use the publisher image as the opening scene, then make a unique editorial
+    card for each sentence so one downloaded photo is not repeated throughout.
     """
     scenes_dir = output_dir / "scenes"
     scenes_dir.mkdir(parents=True, exist_ok=True)
@@ -500,7 +522,10 @@ def fetch_multi_scene_content(
         media_type = "image"
 
         if is_bts:
-            fetched_path = article_image_path
+            if i == 0:
+                fetched_path = article_image_path
+            else:
+                fetched_path = create_fallback_scene_image(text, kw, image_dest)
             media_type = "image"
 
         # Non-BTS legacy niches may use licensed/authorized external stock.

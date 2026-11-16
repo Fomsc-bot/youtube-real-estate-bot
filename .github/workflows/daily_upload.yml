@@ -63,6 +63,13 @@ jobs:
       - name: "Prepare output directory"
         run: mkdir -p output
 
+      - name: "Restore recent story history"
+        uses: actions/cache/restore@v4
+        with:
+          path: output/content_history.json
+          key: content-history-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: content-history-
+
       - name: "Run Viral Shorts Pipeline"
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -94,6 +101,13 @@ jobs:
             output/upload_result.json
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: "Save recent story history"
+        if: success() && github.event.inputs.dry_run != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: output/content_history.json
+          key: content-history-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: "Report Pipeline Failure"
         if: failure()
