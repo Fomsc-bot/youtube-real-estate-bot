@@ -305,14 +305,16 @@ def create_fallback_scene_image(text_label: str, keyword: str, dest_path: Path) 
 
 
 BTS_NEWS_FEEDS = [
-    "https://www.soompi.com/tag/bts/feed",
-    "https://www.soompi.com/tag/jungkook/feed",
-    "https://www.soompi.com/tag/jin/feed",
-    "https://www.soompi.com/tag/jimin/feed",
-    "https://www.soompi.com/tag/v/feed",
-    "https://www.soompi.com/tag/suga/feed",
-    "https://www.soompi.com/tag/rm/feed",
-    "https://www.soompi.com/tag/j-hope/feed",
+    ("Soompi", "https://www.soompi.com/tag/bts/feed"),
+    ("Soompi", "https://www.soompi.com/tag/jungkook/feed"),
+    ("Soompi", "https://www.soompi.com/tag/jin/feed"),
+    ("Soompi", "https://www.soompi.com/tag/jimin/feed"),
+    ("Soompi", "https://www.soompi.com/tag/v/feed"),
+    ("Soompi", "https://www.soompi.com/tag/suga/feed"),
+    ("Soompi", "https://www.soompi.com/tag/rm/feed"),
+    ("Soompi", "https://www.soompi.com/tag/j-hope/feed"),
+    ("The Korea Herald", "https://www.koreaherald.com/rss/newsAll"),
+    ("The Korea Times", "https://feed.koreatimes.co.kr/k/allnews.xml"),
 ]
 
 
@@ -337,8 +339,13 @@ def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
         if row.get("article_url") and row.get("used_at")
         and datetime.fromisoformat(row["used_at"]).astimezone() >= cutoff_history
     }
+    normalize_title = lambda value: re.sub(r"\W+", " ", value.casefold()).strip()
+    seen_titles = {
+        normalize_title(row.get("title", ""))
+        for row in history.get("items", []) if row.get("title")
+    }
     cutoff = datetime.now().astimezone() - timedelta(days=3)
-    for feed_url in BTS_NEWS_FEEDS:
+    for publisher, feed_url in BTS_NEWS_FEEDS:
         try:
             response = requests.get(feed_url, headers=HTTP_HEADERS, timeout=10)
             if response.status_code != 200:
@@ -374,10 +381,12 @@ def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
                     continue
                 if not re.search(r"\b(BTS|Bangtan|Jungkook|Jimin|Jin|Suga|Yoongi|RM|Namjoon|J-Hope|Hobi|V|Taehyung)\b", title, re.I):
                     continue
-                if link in seen_urls:
+                normalized_title = normalize_title(title)
+                if link in seen_urls or normalized_title in seen_titles:
                     continue
+                seen_titles.add(normalized_title)
                 candidates.append({"title": title, "description": excerpt, "article_url": link,
-                    "published_at": published.isoformat(), "source": "Soompi",
+                    "published_at": published.isoformat(), "source": publisher,
                     "article_image_url": image_url})
         except Exception as error:
             logger.warning(f"Could not read BTS RSS feed {feed_url}: {error}")
