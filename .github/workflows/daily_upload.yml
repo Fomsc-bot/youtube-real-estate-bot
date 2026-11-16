@@ -1,8 +1,11 @@
+
 name: "BTS Spotlight — Daily Shorts Upload"
 
 on:
   schedule:
-    - cron: '30 12 * * *' # Daily at 12:30 UTC
+    - cron: '30 6 * * *'  # 12:00 PM Sri Lanka Time
+    - cron: '30 11 * * *' # 5:00 PM Sri Lanka Time
+    - cron: '30 14 * * *' # 8:00 PM Sri Lanka Time
   workflow_dispatch:
     inputs:
       dry_run:
