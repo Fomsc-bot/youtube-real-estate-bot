@@ -318,7 +318,7 @@ BTS_NEWS_FEEDS = [
 ]
 
 
-def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
+def fetch_bts_articles(output_dir: Path, max_age_days: int = 3) -> List[dict]:
     """
     Select the newest usable headline/excerpt from free BTS RSS feeds and fetch
     its publisher preview image for the opening scene when one is available.
@@ -344,7 +344,7 @@ def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
         normalize_title(row.get("title", ""))
         for row in history.get("items", []) if row.get("title")
     }
-    cutoff = datetime.now().astimezone() - timedelta(days=3)
+    cutoff = datetime.now().astimezone() - timedelta(days=max_age_days)
     for publisher, feed_url in BTS_NEWS_FEEDS:
         try:
             response = requests.get(feed_url, headers=HTTP_HEADERS, timeout=10)
@@ -392,26 +392,37 @@ def fetch_latest_bts_article(output_dir: Path) -> Optional[dict]:
             logger.warning(f"Could not read BTS RSS feed {feed_url}: {error}")
 
     if not candidates:
-        logger.warning("No recent, unused BTS source item found in the last 3 days.")
-        return None
+        logger.warning(f"No unused BTS source item found in the last {max_age_days} days.")
+        return []
     candidates.sort(key=lambda item: item["published_at"], reverse=True)
-    selected = candidates[0]
-    local_image = fetch_article_preview_image(
-        selected["article_url"], output_dir,
-        rss_image_url=selected.get("article_image_url"),
-    )
-    if local_image:
-        selected["local_image_path"] = str(local_image)
-    logger.info(f"Selected newest source item: {selected['title'][:100]} ({selected['article_url']})")
+    usable = []
+    for candidate in candidates[:12]:
+        local_image = fetch_article_preview_image(
+            candidate["article_url"], output_dir,
+            rss_image_url=candidate.get("article_image_url"),
+        )
+        if not local_image:
+            logger.warning(f"Skipping BTS story without a usable image: {candidate['title'][:90]}")
+            continue
+        candidate["local_image_path"] = str(local_image)
+        usable.append(candidate)
+    return usable
+
+
+def record_bts_article_used(output_dir: Path, article: dict) -> None:
+    """Record a story only after its image and generated script passed validation."""
+    history_path = output_dir / "content_history.json"
+    try:
+        history = json.loads(history_path.read_text(encoding="utf-8")) if history_path.exists() else {}
+    except (OSError, ValueError):
+        history = {}
     history.setdefault("items", []).append({
-        "article_url": selected["article_url"],
-        "title": selected["title"],
+        "article_url": article.get("article_url"),
+        "title": article.get("title"),
         "used_at": datetime.now().astimezone().isoformat(),
     })
     history["items"] = history["items"][-100:]
-    output_dir.mkdir(parents=True, exist_ok=True)
     history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
-    return selected
 
 
 class _ArticlePreviewParser(HTMLParser):

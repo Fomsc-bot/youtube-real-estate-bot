@@ -35,7 +35,7 @@ logger = logging.getLogger("ViralShorts.Orchestrator")
 # ── Pipeline Imports ──────────────────────────────────────────────────────────
 from src.generate_assets import ensure_assets
 from src.generate_script import generate_viral_script, get_fallback_script
-from src.fetch_content import fetch_multi_scene_content, save_json, fetch_apod, fetch_latest_bts_article
+from src.fetch_content import fetch_multi_scene_content, save_json, fetch_apod, fetch_bts_articles, record_bts_article_used
 from src.generate_audio import generate_audio
 from src.build_video import build_video
 from src.generate_metadata import generate_metadata
@@ -76,23 +76,36 @@ def main(
         logger.info("DRY RUN: Using fixture script data.")
     else:
         source_content = None
+        script_data = None
         if niche == "bts":
-            try:
-                source_content = fetch_latest_bts_article(output_dir)
-                if source_content:
-                    if not source_content.get("local_image_path"):
-                        raise RuntimeError(
-                            "The selected BTS article did not provide a downloadable image; "
-                            "skipping this upload instead of generating a replacement visual."
-                        )
-                    save_json(source_content, output_dir / "article.json")
-                    logger.info(f"✅ Article fetched: {source_content['title'][:60]}")
-                    logger.info(f"   Source: {source_content.get('article_url', '')[:60]}")
-                else:
-                    raise RuntimeError("No recent BTS source item was available; skipping this upload to avoid recycled or unsupported claims.")
-            except Exception as e:
-                logger.error(f"BTS source collection failed: {e}")
-                raise
+            candidates = fetch_bts_articles(output_dir, max_age_days=30)[:12]
+            if not candidates:
+                raise RuntimeError("No unused BTS RSS story with a downloadable image was found in the last 30 days.")
+
+            last_error = None
+            for index, candidate in enumerate(candidates, start=1):
+                try:
+                    candidate_script = generate_viral_script(
+                        niche=niche, topic=topic, source_content=candidate
+                    )
+                except Exception as error:
+                    last_error = error
+                    logger.warning(f"BTS script failed for this story; trying the next candidate: {error}")
+                    continue
+
+                source_content = candidate
+                script_data = candidate_script
+                record_bts_article_used(output_dir, candidate)
+                save_json(source_content, output_dir / "article.json")
+                logger.info(f"Article fetched: {source_content['title'][:60]}")
+                logger.info(f"Source: {source_content.get('article_url', '')[:60]}")
+                break
+
+            if script_data is None:
+                raise RuntimeError(
+                    f"No BTS source produced a valid script after trying {len(candidates)} candidates. "
+                    f"Last error: {last_error}"
+                )
 
         elif niche == "space":
             nasa_key = os.environ.get("NASA_API_KEY") or "DEMO_KEY"
@@ -102,9 +115,10 @@ def main(
             except Exception as e:
                 logger.warning(f"NASA APOD fetch fallback: {e}")
 
-        script_data = generate_viral_script(
-            niche=niche, topic=topic, source_content=source_content
-        )
+        if niche != "bts":
+            script_data = generate_viral_script(
+                niche=niche, topic=topic, source_content=source_content
+            )
         if niche == "bts" and source_content:
             script_data["source_url"] = source_content.get("article_url")
             script_data["source_publisher"] = source_content.get("source")
