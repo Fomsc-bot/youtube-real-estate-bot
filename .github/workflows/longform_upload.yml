@@ -2,13 +2,6 @@ name: "BTS Long-form Fan Commentary"
 
 on:
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Build and save artifacts without uploading (recommended for review)"
-        required: true
-        type: choice
-        default: "true"
-        options: ["true", "false"]
 
 permissions:
   contents: read
@@ -38,12 +31,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: "Research, build, and optionally upload long-form video"
+      - name: "Research, build, and upload long-form video"
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: openai/gpt-oss-20b
           YOUTUBE_CREDENTIALS_JSON: ${{ secrets.YOUTUBE_CREDENTIALS_JSON }}
-          LONGFORM_DRY_RUN: ${{ inputs.dry_run }}
+          LONGFORM_DRY_RUN: "false"
         run: python -m src.longform_pipeline
 
       - name: "Upload long-form review artifacts"

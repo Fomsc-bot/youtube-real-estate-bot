@@ -108,6 +108,11 @@ def run_longform_pipeline(topic: str, research_notes: str, source_urls: str, dry
     )
 
     result = upload_to_youtube(video_path=video_path, metadata=metadata, dry_run=dry_run)
+    if not dry_run and result.get("dry_run"):
+        raise RuntimeError(
+            "A YouTube upload was requested, but no upload occurred. "
+            "Check that YOUTUBE_CREDENTIALS_JSON is configured as a valid GitHub Actions secret."
+        )
     video_id = result.get("video_id")
     if not dry_run and video_id and video_id not in {"unknown", "DRY_RUN_NO_UPLOAD", "NO_CREDENTIALS"}:
         result["video_url"] = f"https://www.youtube.com/watch?v={video_id}"
