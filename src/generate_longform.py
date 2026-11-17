@@ -69,10 +69,7 @@ def _validate_generated_script(parsed: dict, source_count: int) -> tuple[list[di
         narration = chapter.get("narration", "").strip()
         if not narration or not chapter.get("title"):
             errors.append(f"chapter {chapter_number} needs a title and narration")
-        chapter_words = len(narration.split())
-        total_words += chapter_words
-        if narration and not 150 <= chapter_words <= 350:
-            errors.append(f"chapter {chapter_number} has {chapter_words} words; expected 150-350 words")
+        total_words += len(narration.split())
 
         indices = chapter.get("source_indices", [])
         if not isinstance(indices, list) or not indices:
@@ -92,8 +89,6 @@ def _validate_generated_script(parsed: dict, source_count: int) -> tuple[list[di
                 f"chapter {chapter_number} cites {indices!r}; allowed source indices are 1 through {source_count}"
             )
 
-    if not 900 <= total_words <= 1800:
-        errors.append(f"narration must contain 900-1,800 words (received {total_words})")
     return chapters, total_words, errors
 
 
@@ -113,7 +108,7 @@ Editorial rules:
 - Use only factual details stated in the research notes. Clearly distinguish fact, attributed reporting, and your own fan interpretation. Never invent quotes, dates, numbers, or anecdotes.
 - Write substantial original analysis, not an article reading, biography dump, ranking, compilation script, or repeated template. Do not reproduce song lyrics or long quotes.
 - Start with a compelling cold open that immediately promises the specific payoff. Deliver a new idea in every chapter, use natural transitions, and finish with a brief subscribe invitation followed by the viewer question.
-- Aim for five distinct chapters totaling 1,200–1,400 spoken words, with roughly 200–280 words per chapter. Keep every chapter meaningful and source-grounded. A complete script may be shorter when the supplied evidence is limited; never pad it with repetition. Write natural voiceover prose, not bullets or stage directions.
+- Aim for an 8–10 minute episode with five distinct, meaningful chapters. Let the amount of narration fit the source material; there is no required word count. Never pad with repetition. Write natural voiceover prose, not bullets or stage directions.
 - For every chapter, list the one-based indices of the research source URLs that support its factual claims. Do not make up source indices.
 - Give an accurate, appealing title (under 90 characters) and thumbnail text of 2–5 words. Avoid misleading promises or clickbait.
 
@@ -167,8 +162,7 @@ The supplied notes are evidence, not text to copy. Return only the required JSON
                         "\n\nCORRECTION REQUIRED: Your previous output failed validation: " + last_error + ". "
                         f"Use only one-based source indices 1 through {len(sources)} (the available URLs are numbered 1 to {len(sources)}). "
                         "Every chapter must cite at least one valid source. Return a corrected complete JSON object. "
-                        "Expand short chapters only with useful source-grounded explanation and original fan analysis; do not add filler. "
-                        "Keep each chapter between 150 and 350 words and the complete narration between 900 and 1,800 words."
+                        "Keep every chapter complete, coherent, and source-grounded. Do not add filler or invent supporting facts."
                     )
                     attempt += 1
                     continue

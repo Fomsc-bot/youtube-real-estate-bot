@@ -10,7 +10,7 @@ Recommended episode formats:
 2. **A member's public artistry** — examine songwriting, performance choices, or an interview, clearly separating reported facts from the host's opinion.
 3. **BTS group chemistry** — explore publicly documented teamwork and creative roles, with one concrete example per section.
 
-Use a direct cold open, promise the episode's payoff in the first 30 seconds, and build five distinct chapters. Aim for 8–10 minutes and 1,150–1,450 spoken words. Do not stretch a short news item to fill time; choose a topic with enough evidence and original commentary. Use a natural subscribe invitation once and end with a specific fan question.
+Use a direct cold open, promise the episode's payoff in the first 30 seconds, and build five distinct chapters. Aim for 8–10 minutes, but the generator does not enforce a word count; do not stretch a short news item to fill time. Choose a topic with enough evidence and original commentary. Use a natural subscribe invitation once and end with a specific fan question.
 
 ## Automatic research collection
 
