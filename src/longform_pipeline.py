@@ -11,6 +11,7 @@ from src.build_longform_video import create_thumbnail, render_longform_video
 from src.fetch_longform_assets import fetch_longform_photos
 from src.generate_audio import generate_audio
 from src.generate_longform import generate_longform_script
+from src.research_longform import obtain_longform_research
 from src.upload_video import get_youtube_service, upload_to_youtube
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -74,6 +75,10 @@ def _set_thumbnail(video_id: str, thumbnail_path: Path) -> None:
 def run_longform_pipeline(topic: str, research_notes: str, source_urls: str, dry_run: bool = True) -> dict:
     output_dir = Path("output/longform")
     output_dir.mkdir(parents=True, exist_ok=True)
+    if not (topic.strip() and research_notes.strip() and source_urls.strip()):
+        topic, research_notes, source_urls = obtain_longform_research(
+            output_dir / "research.json"
+        )
     script = generate_longform_script(
         topic=topic,
         research_notes=research_notes,
@@ -127,7 +132,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Build and upload one source-based BTS long-form video.")
     parser.add_argument("--dry-run", action="store_true", default=os.environ.get("LONGFORM_DRY_RUN", "true").lower() == "true")
-    parser.add_argument("--topic", default=os.environ.get("LONGFORM_TOPIC", "Why BTS feels so magnetic to ARMY"))
+    parser.add_argument("--topic", default=os.environ.get("LONGFORM_TOPIC", ""))
     parser.add_argument("--research-notes", default=os.environ.get("LONGFORM_RESEARCH_NOTES", ""))
     parser.add_argument("--source-urls", default=os.environ.get("LONGFORM_SOURCE_URLS", ""))
     args = parser.parse_args()

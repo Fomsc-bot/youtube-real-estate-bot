@@ -12,11 +12,13 @@ Recommended episode formats:
 
 Use a direct cold open, promise the episode's payoff in the first 30 seconds, and build five distinct chapters. Aim for 8–10 minutes and 1,150–1,450 spoken words. Do not stretch a short news item to fill time; choose a topic with enough evidence and original commentary. Use a natural subscribe invitation once and end with a specific fan question.
 
-## Research collection before each run
+## Automatic research collection
 
-The workflow asks for research notes and at least three HTTPS source URLs. Collect notes from official BIGHIT/BTS releases, interviews, verified public statements, and reputable reporting. For each note, record the source number and the exact fact it supports. Mark personal interpretation as opinion. Exclude dating rumors, leaked/private material, unverified fan claims, and unsupported personality assertions. The model does not browse those URLs; the supplied notes are the factual research pack, and the URLs are added to the description for viewers.
+The workflow collects recent BTS-tagged RSS items from its configured publishers, then uses the language model to choose a topic and a coherent set of at least three articles. It builds the evidence notes directly from the publishers' RSS headlines and excerpts and saves the chosen URLs, excerpts, and topic in `output/longform/research.json`. No research fields are needed in the workflow form.
 
-Use the workflow's dry-run setting first. Review the generated script against the source notes and inspect the video and thumbnail artifacts before choosing `dry_run=false` to publish publicly.
+RSS excerpts are attributed source material, not independent verification. Review the linked publisher pages and correct any errors or context gaps in the generated script before publishing. Exclude dating rumors, leaked/private material, unverified fan claims, and unsupported personality assertions. The generated episode should distinguish reported facts from fan interpretation.
+
+Use the workflow's dry-run setting first (the default). Review the research bundle, generated script, image credits, video, and thumbnail before choosing `dry_run=false` to publish publicly.
 
 ## Rendering and rights
 
