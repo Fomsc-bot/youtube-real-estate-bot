@@ -71,8 +71,8 @@ def _validate_generated_script(parsed: dict, source_count: int) -> tuple[list[di
             errors.append(f"chapter {chapter_number} needs a title and narration")
         chapter_words = len(narration.split())
         total_words += chapter_words
-        if narration and not 240 <= chapter_words <= 280:
-            errors.append(f"chapter {chapter_number} has {chapter_words} words; target 240-280 words")
+        if narration and not 150 <= chapter_words <= 350:
+            errors.append(f"chapter {chapter_number} has {chapter_words} words; expected 150-350 words")
 
         indices = chapter.get("source_indices", [])
         if not isinstance(indices, list) or not indices:
@@ -92,8 +92,8 @@ def _validate_generated_script(parsed: dict, source_count: int) -> tuple[list[di
                 f"chapter {chapter_number} cites {indices!r}; allowed source indices are 1 through {source_count}"
             )
 
-    if not 1200 <= total_words <= 1400:
-        errors.append(f"narration must contain 1,200-1,400 words (received {total_words})")
+    if not 900 <= total_words <= 1800:
+        errors.append(f"narration must contain 900-1,800 words (received {total_words})")
     return chapters, total_words, errors
 
 
@@ -113,7 +113,7 @@ Editorial rules:
 - Use only factual details stated in the research notes. Clearly distinguish fact, attributed reporting, and your own fan interpretation. Never invent quotes, dates, numbers, or anecdotes.
 - Write substantial original analysis, not an article reading, biography dump, ranking, compilation script, or repeated template. Do not reproduce song lyrics or long quotes.
 - Start with a compelling cold open that immediately promises the specific payoff. Deliver a new idea in every chapter, use natural transitions, and finish with a brief subscribe invitation followed by the viewer question.
-- Make five distinct chapters totaling 1,200–1,400 spoken words. EACH chapter must contain 240-280 narration words, aiming for about 260 words. Do not finish early: check the length of every chapter and expand its original analysis until all five meet the target. Write natural voiceover prose, not bullets or stage directions.
+- Aim for five distinct chapters totaling 1,200–1,400 spoken words, with roughly 200–280 words per chapter. Keep every chapter meaningful and source-grounded. A complete script may be shorter when the supplied evidence is limited; never pad it with repetition. Write natural voiceover prose, not bullets or stage directions.
 - For every chapter, list the one-based indices of the research source URLs that support its factual claims. Do not make up source indices.
 - Give an accurate, appealing title (under 90 characters) and thumbnail text of 2–5 words. Avoid misleading promises or clickbait.
 
@@ -167,8 +167,8 @@ The supplied notes are evidence, not text to copy. Return only the required JSON
                         "\n\nCORRECTION REQUIRED: Your previous output failed validation: " + last_error + ". "
                         f"Use only one-based source indices 1 through {len(sources)} (the available URLs are numbered 1 to {len(sources)}). "
                         "Every chapter must cite at least one valid source. Return a corrected complete JSON object. "
-                        "Expand short chapters with additional source-grounded explanation and original fan analysis; do not add filler. "
-                        "Each of the five narration fields must independently contain 240-280 words."
+                        "Expand short chapters only with useful source-grounded explanation and original fan analysis; do not add filler. "
+                        "Keep each chapter between 150 and 350 words and the complete narration between 900 and 1,800 words."
                     )
                     attempt += 1
                     continue
@@ -178,8 +178,10 @@ The supplied notes are evidence, not text to copy. Return only the required JSON
                 break
             except Exception as error:
                 last_error = error
-                logger.warning("Long-form generation failed with %s: %s", model, error)
-                status = getattr(getattr(error, "response", None), "status_code", None)
+                response = getattr(error, "response", None)
+                detail = getattr(response, "text", "")[:1000] if response is not None else ""
+                logger.warning("Long-form generation failed with %s: %s %s", model, error, detail)
+                status = getattr(response, "status_code", None)
                 if status == 429 and rate_limit_retries < 2:
                     retry_after = getattr(error.response, "headers", {}).get("Retry-After")
                     try:
