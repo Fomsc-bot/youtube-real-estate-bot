@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 from io import BytesIO
 import json
 import logging
@@ -339,6 +340,10 @@ def fetch_bts_articles(output_dir: Path, max_age_days: int = 3) -> List[dict]:
         if row.get("article_url") and row.get("used_at")
         and datetime.fromisoformat(row["used_at"]).astimezone() >= cutoff_history
     }
+    seen_image_hashes = {
+        row.get("sha256") for row in history.get("used_images", [])
+        if row.get("sha256")
+    }
     normalize_title = lambda value: re.sub(r"\W+", " ", value.casefold()).strip()
     seen_titles = {
         normalize_title(row.get("title", ""))
@@ -400,11 +405,13 @@ def fetch_bts_articles(output_dir: Path, max_age_days: int = 3) -> List[dict]:
         local_image = fetch_article_preview_image(
             candidate["article_url"], output_dir,
             rss_image_url=candidate.get("article_image_url"),
+            excluded_sha256=seen_image_hashes,
         )
         if not local_image:
             logger.warning(f"Skipping BTS story without a usable image: {candidate['title'][:90]}")
             continue
         candidate["local_image_path"] = str(local_image)
+        candidate["image_sha256"] = local_image.stem.removeprefix("article_image_")
         usable.append(candidate)
     return usable
 
@@ -422,6 +429,15 @@ def record_bts_article_used(output_dir: Path, article: dict) -> None:
         "used_at": datetime.now().astimezone().isoformat(),
     })
     history["items"] = history["items"][-100:]
+    image_hash = article.get("image_sha256")
+    if image_hash:
+        history.setdefault("used_images", []).append({
+            "sha256": image_hash,
+            "image_url": article.get("article_image_url"),
+            "article_url": article.get("article_url"),
+            "used_at": datetime.now().astimezone().isoformat(),
+        })
+        history["used_images"] = history["used_images"][-500:]
     history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
 
 
@@ -446,6 +462,7 @@ def fetch_article_preview_image(
     article_url: str,
     output_dir: Path,
     rss_image_url: Optional[str] = None,
+    excluded_sha256: Optional[set] = None,
 ) -> Optional[Path]:
     """Download and format the image advertised by an article's social metadata."""
     image_url = rss_image_url
@@ -483,6 +500,10 @@ def fetch_article_preview_image(
             chunks.append(chunk)
 
         image_bytes = b"".join(chunks)
+        image_sha256 = hashlib.sha256(image_bytes).hexdigest()
+        if excluded_sha256 and image_sha256 in excluded_sha256:
+            logger.info("Skipping article preview image already used in a previous Short.")
+            return None
         with Image.open(BytesIO(image_bytes)) as image:
             image_format = (image.format or "JPEG").upper()
             image.verify()
@@ -491,7 +512,7 @@ def fetch_article_preview_image(
             logger.warning(f"Unsupported article image format: {image_format}")
             return None
 
-        dest_path = output_dir / f"article_image{extension}"
+        dest_path = output_dir / f"article_image_{image_sha256}{extension}"
         dest_path.write_bytes(image_bytes)
         logger.info(f"Saved original article preview image unchanged -> {dest_path}")
         return dest_path
