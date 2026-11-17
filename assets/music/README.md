@@ -4,11 +4,12 @@ Place your royalty-free background music `.mp3` or `.wav` files directly in this
 
 ## Music Selection Logic
 
-The video builder module (`src/video_builder.py`) automatically scans this folder during execution:
-- If multiple audio files are present, it randomly selects one track for the video background.
-- It loops the background music track to cover the full duration of the voiceover.
-- It mixes the background track at low volume (12% to 15%) so it doesn't overpower the voiceover.
+The video builder (`src/build_video.py`) automatically scans this folder during execution:
+- It uses the first audio file in alphabetical order, which makes runs reproducible.
+- It loops that track to cover the voiceover and mixes it at 10% volume under the narration.
 - **Fail-safe**: If this folder is empty, the bot will compile the video with ONLY the voiceover, and will not crash.
+
+Only add tracks that you have permission to use on YouTube. A track from YouTube Audio Library is a good option; follow any attribution requirements shown for that track.
 
 ## Recommended Free Sources
 

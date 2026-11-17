@@ -119,7 +119,7 @@ HARD RULES:
 1. Total narration word count: 45–65 words ONLY.
 2. Open on the specific surprising detail or unresolved question in the supplied story. No greeting, channel intro, or generic "Did you know?" opener.
 3. Use only the supplied headline and RSS excerpt. Never invent numbers, quotes, dates, motives, records, or member statements. Attribute claims to the named publisher when appropriate.
-4. Use a compact story arc: hook, useful context, payoff. End on a specific viewer question that invites a real fan perspective. Do not spend narration time saying "subscribe".
+4. Use a compact story arc: hook, useful context, payoff. Before the final specific viewer question, add one brief, natural invitation to subscribe for more source-checked BTS stories. Keep the viewer question last and avoid generic promotional language.
 5. Provide 2-3 original graphic ideas for every sentence. Do not request BTS photos, logos, concert clips, music videos, or other copyrighted media.
 
 Output MUST be in raw JSON (no markdown fences):

@@ -3,7 +3,7 @@ build_video.py — Remotion & MoneyPrinterTurbo Video Compositor Engine
 
 Assembles a viral 9:16 YouTube Short:
   1. Multi-clip visual scene concatenation (video clips + Ken Burns pan-zoom photos)
-  2. Remotion-style word-by-word animated Karaoke subtitles (neon yellow highlight + stroke)
+  2. Readable timed phrase captions with high-contrast styling
   3. Hook text banner overlay (first 2.5s)
   4. Animated YouTube "SUBSCRIBE" conversion badge popup during CTA
   5. Top/bottom video duration progress bar
@@ -26,7 +26,7 @@ import textwrap
 from pathlib import Path
 from typing import Optional, List
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -65,8 +65,18 @@ def parse_vtt(vtt_path: Path) -> List[dict]:
         if word:
             entries.append({"word": word, "start_s": start_s, "end_s": end_s})
 
-    logger.info(f"Parsed {len(entries)} karaoke word timestamps from VTT.")
-    return entries
+    # Show short, readable phrase captions instead of flashing one word at a time.
+    grouped = []
+    for offset in range(0, len(entries), 3):
+        chunk = entries[offset:offset + 3]
+        grouped.append({
+            "word": " ".join(entry["word"] for entry in chunk),
+            "start_s": chunk[0]["start_s"],
+            "end_s": chunk[-1]["end_s"],
+        })
+
+    logger.info(f"Parsed {len(grouped)} phrase caption groups from VTT.")
+    return grouped
 
 
 def _vtt_time_to_s(t: str) -> float:
@@ -83,6 +93,8 @@ def _build_filter_complex(
     scenes_meta: List[dict],
     subscribe_badge_exists: bool,
     logo_exists: bool,
+    niche: str = "bts",
+    background_music_exists: bool = False,
 ) -> tuple[str, str, str]:
     """
     Build complete FFmpeg filtergraph string including multi-scene visuals,
@@ -122,6 +134,15 @@ def _build_filter_complex(
 
     # ── 3. Remotion Word-by-Word Karaoke Subtitles ──
     current_label = "v_hook"
+    if niche == "bts":
+        filters.append(
+            f"[{current_label}]drawtext="
+            f"fontfile='{font_path_escaped}':"
+            "text='BTS SPOTLIGHT':fontsize=32:fontcolor=white:"
+            "box=1:boxcolor=0x2A164D@0.88:boxborderw=14:"
+            "x=48:y=60[v_brand]"
+        )
+        current_label = "v_brand"
     caption_y = int(VIDEO_HEIGHT * 0.65)
 
     for i, entry in enumerate(words):
@@ -142,10 +163,10 @@ def _build_filter_complex(
             f"[{current_label}]drawtext="
             f"fontfile='{font_path_escaped}':"
             f"text='{word_clean}':"
-            f"fontsize=135:"
+            f"fontsize=92:"
             f"fontcolor=yellow:"
             f"bordercolor=black:"
-            f"borderw=12:"
+            f"borderw=8:"
             f"shadowx=10:shadowy=10:shadowcolor=black@0.85:"
             f"x=(w-text_w)/2:"
             f"y={caption_y}:"
@@ -165,8 +186,20 @@ def _build_filter_complex(
     )
     current_label = "v_prog"
 
+    if niche == "bts":
+        filters.append(
+            f"[{current_label}]drawtext="
+            f"fontfile='{font_path_escaped}':"
+            "text='SUBSCRIBE FOR BTS STORIES':"
+            "fontsize=42:fontcolor=white:borderw=3:bordercolor=black:"
+            "box=1:boxcolor=0x2A164D@0.92:boxborderw=22:"
+            "x=(w-text_w)/2:y=h*0.82:"
+            f"enable='between(t,{max(0.0, total_duration - 3.5):.2f},{total_duration:.2f})'[v_follow]"
+        )
+        current_label = "v_follow"
+
     # ── 5. Subscribe Badge Popup (Last 4.5 seconds CTA) ──
-    input_idx = 2
+    input_idx = 3 if background_music_exists else 2
     if subscribe_badge_exists:
         sub_start = max(0.0, total_duration - 4.5)
         filters.append(
@@ -193,8 +226,14 @@ def _build_filter_complex(
         filters.append(f"[{current_label}]null[v_final]")
         final_video_label = "v_final"
 
-    # Keep the exported soundtrack voice-only; no music input is added.
-    filters.append("[1:a]volume=1.0[a_final]")
+    if background_music_exists:
+        filters.append(
+            "[1:a]volume=1.0[voice];"
+            "[2:a]volume=0.10[bg];"
+            "[voice][bg]amix=inputs=2:duration=first:dropout_transition=2[a_final]"
+        )
+    else:
+        filters.append("[1:a]volume=1.0[a_final]")
     final_audio_label = "a_final"
 
     return ";".join(filters), final_video_label, final_audio_label
@@ -222,10 +261,9 @@ def build_video(
             niche = script_data.get("niche", "bts")
 
     hook_text_path = output_dir / "hook_text.txt"
-    if niche != "bts":
-        wrapped_hook = textwrap.fill(hook_text.upper(), width=14)
-        with open(hook_text_path, "w", encoding="utf-8") as f:
-            f.write(wrapped_hook)
+    wrapped_hook = textwrap.fill(hook_text.upper(), width=14)
+    with open(hook_text_path, "w", encoding="utf-8") as f:
+        f.write(wrapped_hook)
 
     scenes_meta_path = output_dir / "scenes_meta.json"
     scenes_meta = []
@@ -241,42 +279,58 @@ def build_video(
             audio_duration = ameta.get("duration_seconds", 20.0)
 
     total_duration = min(audio_duration + 0.5, 58.0)
-    words = parse_vtt(vtt_path) if niche != "bts" else []
+    words = parse_vtt(vtt_path)
     font_path = cfg.get("caption_font", DEFAULT_FONT)
 
+    music_dir = Path("assets/music")
+    music_candidates = sorted(
+        path for path in music_dir.glob("*")
+        if path.is_file() and path.suffix.lower() in {".mp3", ".wav", ".m4a", ".aac"}
+    ) if music_dir.exists() else []
+    background_music = music_candidates[0] if music_candidates else None
+    if background_music:
+        logger.info(f"Using low-volume background track: {background_music.name}")
+
     badge_path = Path(SUBSCRIBE_BADGE_PATH)
-    if niche != "bts" and not badge_path.exists():
+    if not badge_path.exists():
         from src.generate_assets import ensure_assets
         ensure_assets()
     badge_enabled = badge_path.exists() and niche != "bts"
 
     logo_path = Path(cfg.get("logo_path", LOGO_PATH))
 
-    if niche == "bts":
-        # BTS output uses the original article image with no synthetic cards,
-        # captions, title overlays, badges, logo, or progress graphics.
-        filter_str = (
-            f"[0:v]scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,"
-            f"pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,"
-            "setsar=1[v_final];[1:a]anull[a_final]"
-        )
-        final_v_label, final_a_label = "v_final", "a_final"
-    else:
-        filter_str, final_v_label, final_a_label = _build_filter_complex(
-            words=words,
-            total_duration=total_duration,
-            hook_text_path=hook_text_path,
-            font_path=font_path,
-            scenes_meta=scenes_meta,
-            subscribe_badge_exists=badge_enabled,
-            logo_exists=logo_path.exists(),
-        )
+    filter_str, final_v_label, final_a_label = _build_filter_complex(
+        words=words,
+        total_duration=total_duration,
+        hook_text_path=hook_text_path,
+        font_path=font_path,
+        scenes_meta=scenes_meta,
+        subscribe_badge_exists=badge_enabled,
+        logo_exists=logo_path.exists(),
+        niche=niche,
+        background_music_exists=background_music is not None,
+    )
 
-    scene_files = sorted(list((output_dir / "scenes").glob("scene_*.jpg")))
+    if niche == "bts":
+        scene_files = [Path(scene["media_path"]) for scene in scenes_meta if scene.get("media_path")]
+        scene_files = [path for path in scene_files if path.is_file()]
+        render_dir = output_dir / "render_scenes"
+        render_dir.mkdir(parents=True, exist_ok=True)
+        normalized_scenes = []
+        for index, scene_path in enumerate(scene_files):
+            normalized_path = render_dir / f"scene_{index:02d}.jpg"
+            with Image.open(scene_path) as scene_image:
+                portrait = ImageOps.fit(
+                    scene_image.convert("RGB"), (VIDEO_WIDTH, VIDEO_HEIGHT),
+                    method=Image.Resampling.LANCZOS,
+                )
+                portrait.save(normalized_path, "JPEG", quality=92)
+            normalized_scenes.append(normalized_path)
+        scene_files = normalized_scenes
+    else:
+        scene_files = sorted(list((output_dir / "scenes").glob("scene_*.jpg")))
     primary_image = image_path
     if not primary_image.exists():
-        if niche == "bts":
-            raise FileNotFoundError(f"Required article image was not found: {primary_image}")
         if scene_files:
             primary_image = scene_files[0]
         else:
@@ -284,7 +338,7 @@ def build_video(
             primary_image = create_fallback_scene_image(hook_text, "BTS", output_dir / "default_visual.jpg")
 
     concat_file = None
-    if niche != "bts" and len(scene_files) > 1:
+    if len(scene_files) > 1:
         concat_file = output_dir / "scenes_concat.txt"
         dur = max(1.0, total_duration / len(scene_files))
         with open(concat_file, "w", encoding="utf-8") as f:
@@ -320,12 +374,14 @@ def build_video(
             "-i", str(audio_path.resolve()),
         ]
 
-    # Keep input indexes in sync with the filter graph. BTS videos deliberately
-    # omit this badge, so do not add it as an otherwise-unused FFmpeg input.
-    if niche != "bts" and badge_enabled:
+    if background_music:
+        cmd += ["-stream_loop", "-1", "-i", str(background_music.resolve())]
+
+    # Keep input indexes in sync with the filter graph.
+    if badge_enabled:
         cmd += ["-i", str(badge_path.resolve())]
 
-    if niche != "bts" and logo_path.exists():
+    if logo_path.exists():
         cmd += ["-i", str(logo_path.resolve())]
 
     cmd += [
