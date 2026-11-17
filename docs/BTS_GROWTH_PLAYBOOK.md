@@ -4,7 +4,7 @@
 
 - The scheduled workflow is BTS-only. It needs a recent, source-linked item and a valid script; if either is missing, it skips publication instead of recycling an old record claim.
 - Scripts must use the supplied headline and excerpt, open on the story's specific detail, explain the payoff, and end on a question fans can answer. The narration no longer spends time on a generic subscribe slogan.
-- BTS scenes use generated text cards. The description links the news source and includes the story question. The uploader does not have permission to post or pin comments with its current upload-only OAuth scope, so the workflow does not claim it pinned one.
+- BTS Shorts use the selected article photo for the full video, with narration and source attribution in the description.
 - Titles and hashtags are specific and restrained. Tags and hashtag stuffing are not a growth strategy; the story and viewer response matter more.
 
 ## Editorial format to test

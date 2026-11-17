@@ -526,10 +526,7 @@ def fetch_multi_scene_content(
     output_dir: Path,
     source_content: Optional[dict] = None,
 ) -> List[dict]:
-    """
-    Use the publisher image as the opening scene, then make a unique editorial
-    card for each sentence so one downloaded photo is not repeated throughout.
-    """
+    """Use the selected publisher photo as the sole visual for BTS Shorts."""
     scenes_dir = output_dir / "scenes"
     scenes_dir.mkdir(parents=True, exist_ok=True)
 
@@ -542,6 +539,18 @@ def fetch_multi_scene_content(
             article_image_path = candidate
     if is_bts and not article_image_path:
         raise RuntimeError("A downloaded article image is required for BTS scenes.")
+
+    if is_bts:
+        scene = {
+            "scene_index": 0,
+            "text": script_data.get("narration", ""),
+            "keyword": script_data.get("title_keyword", "BTS"),
+            "media_path": str(article_image_path),
+            "media_type": "image",
+        }
+        save_json({"scenes": [scene]}, output_dir / "scenes_meta.json")
+        logger.info("BTS visual: using the selected article photo for the full Short.")
+        return [scene]
 
     sentences = script_data.get("sentences", [])
 

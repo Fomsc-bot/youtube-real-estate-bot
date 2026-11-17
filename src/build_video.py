@@ -26,7 +26,6 @@ import textwrap
 from pathlib import Path
 from typing import Optional, List
 
-from PIL import Image, ImageOps
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -261,9 +260,10 @@ def build_video(
             niche = script_data.get("niche", "bts")
 
     hook_text_path = output_dir / "hook_text.txt"
-    wrapped_hook = textwrap.fill(hook_text.upper(), width=14)
-    with open(hook_text_path, "w", encoding="utf-8") as f:
-        f.write(wrapped_hook)
+    if niche != "bts":
+        wrapped_hook = textwrap.fill(hook_text.upper(), width=14)
+        with open(hook_text_path, "w", encoding="utf-8") as f:
+            f.write(wrapped_hook)
 
     scenes_meta_path = output_dir / "scenes_meta.json"
     scenes_meta = []
@@ -287,7 +287,7 @@ def build_video(
         path for path in music_dir.glob("*")
         if path.is_file() and path.suffix.lower() in {".mp3", ".wav", ".m4a", ".aac"}
     ) if music_dir.exists() else []
-    background_music = music_candidates[0] if music_candidates else None
+    background_music = music_candidates[0] if music_candidates and niche != "bts" else None
     if background_music:
         logger.info(f"Using low-volume background track: {background_music.name}")
 
@@ -299,34 +299,32 @@ def build_video(
 
     logo_path = Path(cfg.get("logo_path", LOGO_PATH))
 
-    filter_str, final_v_label, final_a_label = _build_filter_complex(
-        words=words,
-        total_duration=total_duration,
-        hook_text_path=hook_text_path,
-        font_path=font_path,
-        scenes_meta=scenes_meta,
-        subscribe_badge_exists=badge_enabled,
-        logo_exists=logo_path.exists(),
-        niche=niche,
-        background_music_exists=background_music is not None,
-    )
+    if niche == "bts":
+        # Keep the source photo uncropped in front of a blurred copy filling portrait.
+        filter_str = (
+            "[0:v]split=2[bg_src][fg_src];"
+            f"[bg_src]scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=increase,"
+            f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},boxblur=24:12,eq=brightness=-0.18[bg];"
+            f"[fg_src]scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease[fg];"
+            "[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[v_final];"
+            "[1:a]anull[a_final]"
+        )
+        final_v_label, final_a_label = "v_final", "a_final"
+    else:
+        filter_str, final_v_label, final_a_label = _build_filter_complex(
+            words=words,
+            total_duration=total_duration,
+            hook_text_path=hook_text_path,
+            font_path=font_path,
+            scenes_meta=scenes_meta,
+            subscribe_badge_exists=badge_enabled,
+            logo_exists=logo_path.exists(),
+            niche=niche,
+            background_music_exists=background_music is not None,
+        )
 
     if niche == "bts":
-        scene_files = [Path(scene["media_path"]) for scene in scenes_meta if scene.get("media_path")]
-        scene_files = [path for path in scene_files if path.is_file()]
-        render_dir = output_dir / "render_scenes"
-        render_dir.mkdir(parents=True, exist_ok=True)
-        normalized_scenes = []
-        for index, scene_path in enumerate(scene_files):
-            normalized_path = render_dir / f"scene_{index:02d}.jpg"
-            with Image.open(scene_path) as scene_image:
-                portrait = ImageOps.fit(
-                    scene_image.convert("RGB"), (VIDEO_WIDTH, VIDEO_HEIGHT),
-                    method=Image.Resampling.LANCZOS,
-                )
-                portrait.save(normalized_path, "JPEG", quality=92)
-            normalized_scenes.append(normalized_path)
-        scene_files = normalized_scenes
+        scene_files = []
     else:
         scene_files = sorted(list((output_dir / "scenes").glob("scene_*.jpg")))
     primary_image = image_path
