@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 
 import requests
@@ -68,7 +69,10 @@ def _validate_generated_script(parsed: dict, source_count: int) -> tuple[list[di
         narration = chapter.get("narration", "").strip()
         if not narration or not chapter.get("title"):
             errors.append(f"chapter {chapter_number} needs a title and narration")
-        total_words += len(narration.split())
+        chapter_words = len(narration.split())
+        total_words += chapter_words
+        if narration and not 240 <= chapter_words <= 280:
+            errors.append(f"chapter {chapter_number} has {chapter_words} words; target 240-280 words")
 
         indices = chapter.get("source_indices", [])
         if not isinstance(indices, list) or not indices:
@@ -88,8 +92,8 @@ def _validate_generated_script(parsed: dict, source_count: int) -> tuple[list[di
                 f"chapter {chapter_number} cites {indices!r}; allowed source indices are 1 through {source_count}"
             )
 
-    if not 1150 <= total_words <= 1450:
-        errors.append(f"narration must contain 1,150–1,450 words (received {total_words})")
+    if not 1200 <= total_words <= 1400:
+        errors.append(f"narration must contain 1,200-1,400 words (received {total_words})")
     return chapters, total_words, errors
 
 
@@ -109,7 +113,7 @@ Editorial rules:
 - Use only factual details stated in the research notes. Clearly distinguish fact, attributed reporting, and your own fan interpretation. Never invent quotes, dates, numbers, or anecdotes.
 - Write substantial original analysis, not an article reading, biography dump, ranking, compilation script, or repeated template. Do not reproduce song lyrics or long quotes.
 - Start with a compelling cold open that immediately promises the specific payoff. Deliver a new idea in every chapter, use natural transitions, and finish with a brief subscribe invitation followed by the viewer question.
-- Make five distinct chapters totaling 1,150–1,450 spoken words. Chapters should each be about 200–300 words. Write natural voiceover prose, not bullets or stage directions.
+- Make five distinct chapters totaling 1,200–1,400 spoken words. EACH chapter must contain 240-280 narration words, aiming for about 260 words. Do not finish early: check the length of every chapter and expand its original analysis until all five meet the target. Write natural voiceover prose, not bullets or stage directions.
 - For every chapter, list the one-based indices of the research source URLs that support its factual claims. Do not make up source indices.
 - Give an accurate, appealing title (under 90 characters) and thumbnail text of 2–5 words. Avoid misleading promises or clickbait.
 
@@ -131,7 +135,9 @@ The supplied notes are evidence, not text to copy. Return only the required JSON
     parsed = None
     for model in models:
         correction = ""
-        for attempt in range(2):
+        rate_limit_retries = 0
+        attempt = 0
+        while attempt < 4:
             try:
                 response = requests.post(
                     GROQ_API_URL,
@@ -142,8 +148,8 @@ The supplied notes are evidence, not text to copy. Return only the required JSON
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt + correction},
                         ],
-                        "temperature": 0.45 if attempt else 0.55,
-                        "max_completion_tokens": 6000,
+                        "temperature": 0.4 if attempt else 0.55,
+                        "max_completion_tokens": 8000,
                         "reasoning_effort": "low",
                         "response_format": LONGFORM_SCHEMA,
                         "include_reasoning": False,
@@ -160,8 +166,11 @@ The supplied notes are evidence, not text to copy. Return only the required JSON
                     correction = (
                         "\n\nCORRECTION REQUIRED: Your previous output failed validation: " + last_error + ". "
                         f"Use only one-based source indices 1 through {len(sources)} (the available URLs are numbered 1 to {len(sources)}). "
-                        "Every chapter must cite at least one valid source. Return a corrected complete JSON object."
+                        "Every chapter must cite at least one valid source. Return a corrected complete JSON object. "
+                        "Expand short chapters with additional source-grounded explanation and original fan analysis; do not add filler. "
+                        "Each of the five narration fields must independently contain 240-280 words."
                     )
+                    attempt += 1
                     continue
                 candidate["chapters"] = chapters
                 candidate["word_count"] = total_words
@@ -170,6 +179,19 @@ The supplied notes are evidence, not text to copy. Return only the required JSON
             except Exception as error:
                 last_error = error
                 logger.warning("Long-form generation failed with %s: %s", model, error)
+                status = getattr(getattr(error, "response", None), "status_code", None)
+                if status == 429 and rate_limit_retries < 2:
+                    retry_after = getattr(error.response, "headers", {}).get("Retry-After")
+                    try:
+                        delay = min(120, max(1, int(float(retry_after))))
+                    except (TypeError, ValueError):
+                        delay = 30 * (2 ** rate_limit_retries)
+                    rate_limit_retries += 1
+                    logger.warning("Groq rate limit reached; retrying %s after %s seconds.", model, delay)
+                    time.sleep(delay)
+                    continue
+                if status == 429:
+                    logger.warning("Groq rate limit retry limit reached for %s; moving to fallback model.", model)
                 break
         if parsed is not None:
             break
