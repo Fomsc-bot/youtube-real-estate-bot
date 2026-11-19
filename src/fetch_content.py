@@ -350,9 +350,13 @@ def fetch_bts_articles(output_dir: Path, max_age_days: int = 3) -> List[dict]:
         try:
             response = requests.get(feed_url, headers=HTTP_HEADERS, timeout=10)
             if response.status_code != 200:
+                logger.warning(f"BTS RSS feed returned HTTP {response.status_code}: {feed_url}")
                 continue
             root = ET.fromstring(response.text)
-            for item in root.findall(".//item")[:12]:
+            feed_items = root.findall(".//item")
+            accepted_before = len(candidates)
+            # General news feeds can publish many items between BTS stories.
+            for item in feed_items[:100]:
                 title = unescape((item.findtext("title") or "").strip())
                 link = (item.findtext("link") or "").strip()
                 raw_description = item.findtext("description") or ""
@@ -380,7 +384,10 @@ def fetch_bts_articles(output_dir: Path, max_age_days: int = 3) -> List[dict]:
                     continue
                 if published < cutoff or published > datetime.now().astimezone() + timedelta(hours=6):
                     continue
-                if not re.search(r"\b(BTS|Bangtan|Jungkook|Jimin|Jin|Suga|Yoongi|RM|Namjoon|J-Hope|Hobi|V|Taehyung)\b", title, re.I):
+                if not re.search(
+                    r"\b(BTS|Bangtan|Jungkook|Jimin|Jin|Suga|Yoongi|RM|Namjoon|J[ -]?Hope|Hobi|V|Taehyung)\b",
+                    f"{title} {excerpt}", re.I,
+                ):
                     continue
                 normalized_title = normalize_title(title)
                 if link in seen_urls or normalized_title in seen_titles:
@@ -389,6 +396,11 @@ def fetch_bts_articles(output_dir: Path, max_age_days: int = 3) -> List[dict]:
                 candidates.append({"title": title, "description": excerpt, "article_url": link,
                     "published_at": published.isoformat(), "source": publisher,
                     "article_image_url": image_url})
+            logger.info(
+                f"BTS RSS scan: {publisher} ({feed_url}) — "
+                f"{min(len(feed_items), 100)} items checked, "
+                f"{len(candidates) - accepted_before} eligible new stories"
+            )
         except Exception as error:
             logger.warning(f"Could not read BTS RSS feed {feed_url}: {error}")
 
