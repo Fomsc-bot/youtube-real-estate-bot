@@ -309,13 +309,9 @@ BTS_NEWS_FEEDS = [
     ("Soompi", "https://www.soompi.com/tag/bts/feed"),
     ("Soompi", "https://www.soompi.com/tag/jungkook/feed"),
     ("Soompi", "https://www.soompi.com/tag/jin/feed"),
-    ("Soompi", "https://www.soompi.com/tag/jimin/feed"),
-    ("Soompi", "https://www.soompi.com/tag/v/feed"),
-    ("Soompi", "https://www.soompi.com/tag/suga/feed"),
-    ("Soompi", "https://www.soompi.com/tag/rm/feed"),
-    ("Soompi", "https://www.soompi.com/tag/j-hope/feed"),
     ("The Korea Herald", "https://www.koreaherald.com/rss/newsAll"),
     ("The Korea Times", "https://feed.koreatimes.co.kr/k/allnews.xml"),
+    ("Soompi", "https://www.soompi.com/tag/jimin/feed"),
 ]
 
 
