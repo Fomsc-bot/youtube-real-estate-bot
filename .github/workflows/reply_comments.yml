@@ -61,7 +61,11 @@ jobs:
 
           if [ -n "${{ github.event.inputs.video_id }}" ]; then
             FLAGS="--video-id ${{ github.event.inputs.video_id }}"
+          elif [ -f "output/upload_result.json" ]; then
+            echo "Found upload_result.json from last daily run — using --auto"
+            FLAGS="--auto"
           else
+            echo "No upload_result.json found — scanning recent channel videos"
             FLAGS="--channel-scan"
           fi
 
