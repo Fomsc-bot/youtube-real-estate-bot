@@ -56,7 +56,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("upload_video")
 
-YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+YOUTUBE_SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+]
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 # YouTube quota error codes that are retryable

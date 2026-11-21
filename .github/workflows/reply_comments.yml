@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       video_id:
-        description: "YouTube Video ID to reply to (blank = auto-detect)"
+        description: "YouTube Video ID to reply to (blank = scan recent videos)"
         required: false
         default: ""
       dry_run:
@@ -18,7 +18,7 @@ on:
 
 jobs:
   reply-comments:
-    name: "Auto-reply to YouTube Comments"
+    name: "💬 Auto-reply to YouTube Comments"
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -41,8 +41,6 @@ jobs:
           pip install -r requirements.txt
 
       # ── 4. Download latest pipeline artifacts ─────────────────────────────
-      # We download the upload_result.json from the last successful daily run
-      # to get the video ID automatically.
       - name: "📥 Download latest upload result"
         uses: dawidd6/action-download-artifact@v6
         with:
@@ -56,24 +54,22 @@ jobs:
       # ── 5. Run comment reply module ────────────────────────────────────────
       - name: "💬 Post Comment Replies"
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          GROQ_MODEL: openai/gpt-oss-20b
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           YOUTUBE_CREDENTIALS_JSON: ${{ secrets.YOUTUBE_CREDENTIALS_JSON }}
         run: |
-          VIDEO_ID_FLAG=""
-          DRY_RUN_FLAG=""
+          FLAGS=""
 
           if [ -n "${{ github.event.inputs.video_id }}" ]; then
-            VIDEO_ID_FLAG="--video-id ${{ github.event.inputs.video_id }}"
+            FLAGS="--video-id ${{ github.event.inputs.video_id }}"
           else
-            VIDEO_ID_FLAG="--auto"
+            FLAGS="--channel-scan"
           fi
 
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            DRY_RUN_FLAG="--dry-run"
+            FLAGS="$FLAGS --dry-run"
           fi
 
-          python src/reply_comments.py $VIDEO_ID_FLAG $DRY_RUN_FLAG
+          python src/reply_comments.py $FLAGS
 
       # ── 6. Upload reply log ────────────────────────────────────────────────
       - name: "📎 Upload reply log"
@@ -90,4 +86,4 @@ jobs:
         if: failure()
         run: |
           echo "::error title=Comment Reply Failed::Auto-comment reply workflow failed."
-          echo "::error::Common causes: GEMINI_API_KEY quota, YOUTUBE_CREDENTIALS_JSON expired"
+          echo "::error::Check GEMINI_API_KEY quota or YOUTUBE_CREDENTIALS_JSON expiry."
