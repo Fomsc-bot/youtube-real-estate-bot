@@ -1,7 +1,14 @@
+
 name: "BTS Long-form Fan Commentary"
 
 on:
   workflow_dispatch:
+  schedule:
+    # US Eastern: 8 PM EST / 9 PM EDT
+    - cron: "0 1 * * *"
+
+    # US Eastern: 9 PM EST / 10 PM EDT
+    - cron: "0 2 * * *"
 
 permissions:
   contents: read
@@ -11,6 +18,7 @@ jobs:
     name: "Build and upload long-form BTS commentary"
     runs-on: ubuntu-latest
     timeout-minutes: 90
+
     steps:
       - name: "Checkout repository"
         uses: actions/checkout@v4
